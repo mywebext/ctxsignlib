@@ -1,0 +1,1775 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>ctxsignlib</name>
+    </assembly>
+    <members>
+        <member name="T:CtxSignlib.Certificates.CertHelpers">
+            <summary>
+            Certificate helper utilities for generating, exporting, loading, and (optionally) installing certificates.
+            </summary>
+            <remarks>
+            These helpers are designed to support deterministic signing/verification workflows and developer tooling.
+            Any interaction with OS certificate stores is explicitly opt-in and clearly marked as platform-specific.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.CreateSelfSignedRsa(System.String,System.Int32,System.Int32)">
+            <summary>
+            Creates an in-memory self-signed RSA X.509 certificate suitable for code-signing scenarios.
+            </summary>
+            <param name="subjectName">
+            Common Name (CN) portion of the subject. This value is inserted as <c>CN={subjectName}</c>.
+            </param>
+            <param name="yearsValid">Number of years the certificate is valid from its creation time. Must be greater than zero.</param>
+            <param name="rsaBits">
+            RSA key size in bits. Must be at least 2048. Recommended values are 2048, 3072, or 4096.
+            </param>
+            <returns>
+            A new <see cref="T:System.Security.Cryptography.X509Certificates.X509Certificate2"/> instance containing a private key.
+            The returned certificate is not installed in any OS store.
+            </returns>
+            <remarks>
+            The generated certificate includes:
+            <list type="bullet">
+            <item><description>Basic Constraints: not a CA</description></item>
+            <item><description>Key Usage: Digital Signature (critical)</description></item>
+            <item><description>Enhanced Key Usage: Code Signing (OID 1.3.6.1.5.5.7.3.3)</description></item>
+            </list>
+            Validity starts slightly in the past (UTC minus 5 minutes) to reduce clock-skew issues.
+            <para/>
+            The certificate is exported and re-imported as PFX to ensure the returned instance carries a usable private key.
+            The re-import uses <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.Exportable"/> and <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet"/>
+            to keep key material from being persisted to disk where supported.
+            </remarks>
+            <exception cref="T:System.ArgumentException">
+            Thrown if <paramref name="subjectName"/> is null/whitespace, if <paramref name="yearsValid"/> is not greater than zero,
+            or if <paramref name="rsaBits"/> is less than 2048.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.ExportPfx(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String)">
+            <summary>
+            Exports a certificate (including its private key, if present) as a PFX/PKCS#12 byte array.
+            </summary>
+            <param name="cert">The certificate to export.</param>
+            <param name="password">
+            Optional password used to protect the exported PFX payload. May be null to export without a password.
+            </param>
+            <returns>Binary PFX (PKCS#12) content.</returns>
+            <remarks>
+            This is an explicit export action. Callers are responsible for handling the returned bytes securely
+            (for example, avoiding logging and ensuring appropriate file permissions if written to disk).
+            </remarks>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="cert"/> is null.</exception>
+            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if export fails.</exception>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.WritePfxFile(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String,System.String)">
+            <summary>
+            Writes a certificate as a PFX/PKCS#12 file using an atomic write strategy.
+            </summary>
+            <param name="cert">The certificate to export and write.</param>
+            <param name="path">Destination file path for the PFX output.</param>
+            <param name="password">
+            Optional password used to protect the exported PFX payload. May be null to write an unprotected PFX.
+            </param>
+            <remarks>
+            This method exports the certificate via <see cref="M:CtxSignlib.Certificates.CertHelpers.ExportPfx(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String)"/> and then writes
+            the result using <see cref="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])"/> to avoid partially-written files.
+            Callers are responsible for selecting a secure output location and applying appropriate access controls.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.LoadPfxFile(System.String,System.String)">
+            <summary>
+            Loads a PFX/PKCS#12 file using cross-platform-friendly key storage flags intended for signing workflows.
+            </summary>
+            <param name="path">Path to the PFX file.</param>
+            <param name="password">Password protecting the PFX file, or null if the PFX is unprotected.</param>
+            <returns>A loaded <see cref="T:System.Security.Cryptography.X509Certificates.X509Certificate2"/> instance.</returns>
+            <remarks>
+            Uses <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.Exportable"/> to allow re-export/signing after load and
+            <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet"/> to avoid persisting private key material to disk where supported.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.InstallToCurrentUserStore(System.Security.Cryptography.X509Certificates.X509Certificate2)">
+            <summary>
+            Installs a certificate into the current user's personal ("My") certificate store.
+            </summary>
+            <param name="cert">The certificate to install.</param>
+            <remarks>
+            This is an optional helper and is intentionally Windows-only because store semantics vary by platform.
+            Installing certificates modifies user/system state and should be treated as an explicit action by the caller.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Certificates.CertHelpers.RemoveFromCurrentUserStore(System.String)">
+            <summary>
+            Removes certificates from the current user's personal ("My") certificate store that match a given thumbprint.
+            </summary>
+            <param name="thumbprint">Certificate thumbprint. Non-hex characters are ignored during normalization.</param>
+            <remarks>
+            This is an optional helper and is intentionally Windows-only.
+            The input thumbprint is normalized via <see cref="M:CtxSignlib.Functions.NormalizeHex(System.String)"/> (removes separators and uppercases).
+            If the normalized thumbprint is empty, this method returns without changes.
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Functions">
+            <summary>
+            Global shared utility functions used throughout the library.
+            </summary>
+            <remarks>
+            This class is intended to be used as a global/static helper surface so calls can be made unqualified
+            (for example, <c>Null(value)</c> instead of <c>Functions.Null(value)</c>).
+            <para/>
+            Methods in this class are designed to be deterministic and low-level. Any side-effects (for example file I/O)
+            are called out explicitly in the member documentation.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.TryParseArgs(System.String[],System.Collections.Generic.Dictionary{System.String,System.String}@,System.StringComparer)">
+            <summary>
+            Parses command-line arguments into a dictionary of key/value pairs.
+            </summary>
+            <param name="args">The raw command-line arguments (typically <c>string[] args</c> from <c>Main</c>).</param>
+            <param name="values">
+            On success, receives a dictionary containing parsed values. Keys are case-insensitive by default.
+            </param>
+            <param name="comparer">
+            Optional dictionary key comparer. If not supplied, <see cref="P:System.StringComparer.OrdinalIgnoreCase"/> is used.
+            </param>
+            <returns>
+            Always returns <c>true</c>. (This method is structured as a "Try" pattern to keep call sites uniform.)
+            </returns>
+            <remarks>
+            Supports:
+            <list type="bullet">
+            <item><description><c>--key=value</c></description></item>
+            <item><description><c>--key value</c></description></item>
+            <item><description><c>--flag</c> (stored as <c>"true"</c>)</description></item>
+            <item><description><c>-k value</c></description></item>
+            <item><description><c>-abc</c> (expanded to <c>-a -b -c</c>, each stored as <c>"true"</c>)</description></item>
+            <item><description>Positional arguments stored as <c>_0</c>, <c>_1</c>, ...</description></item>
+            </list>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.HasArg(System.Collections.Generic.Dictionary{System.String,System.String},System.String)">
+            <summary>
+            Returns <c>true</c> if a parsed args dictionary contains a given argument name.
+            </summary>
+            <param name="args">Parsed args dictionary produced by <see cref="M:CtxSignlib.Functions.TryParseArgs(System.String[],System.Collections.Generic.Dictionary{System.String,System.String}@,System.StringComparer)"/>.</param>
+            <param name="name">Argument name (without leading dashes).</param>
+        </member>
+        <member name="M:CtxSignlib.Functions.GetArg(System.Collections.Generic.Dictionary{System.String,System.String},System.String,System.String)">
+            <summary>
+            Gets an argument value from a parsed args dictionary, returning a default if missing.
+            </summary>
+            <param name="args">Parsed args dictionary.</param>
+            <param name="name">Argument name (without leading dashes).</param>
+            <param name="defaultValue">Value to return if the key is not present.</param>
+            <returns>The stored value, or <paramref name="defaultValue"/> if missing.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.GetArgBool(System.Collections.Generic.Dictionary{System.String,System.String},System.String,System.Boolean)">
+            <summary>
+            Gets a boolean argument value from a parsed args dictionary.
+            </summary>
+            <param name="args">Parsed args dictionary.</param>
+            <param name="name">Argument name (without leading dashes).</param>
+            <param name="defaultValue">Value to return if missing.</param>
+            <returns>
+            <c>true</c> if present as a flag (<c>--name</c>) or if the value is one of:
+            <c>1</c>, <c>true</c>, <c>yes</c>, <c>on</c> (case-insensitive). Otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            If the argument exists but has an empty value, it is treated as <c>true</c>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.IsSubPathOf(System.String,System.String)">
+            <summary>
+            Determines whether <paramref name="childPath"/> is located under <paramref name="rootDir"/>
+            (or is equal to it), using full-path normalization.
+            </summary>
+            <param name="rootDir">
+            The root directory to test against.
+            </param>
+            <param name="childPath">
+            The candidate path that may be a descendant of <paramref name="rootDir"/>.
+            </param>
+            <returns>
+            <c>true</c> if <paramref name="childPath"/> is the same as
+            <paramref name="rootDir"/> or is contained beneath it; otherwise, <c>false</c>.
+            </returns>
+            <remarks>
+            Comparison is case-insensitive on Windows and case-sensitive on non-Windows platforms.
+            Trailing separators are handled to prevent false positives
+            (for example, <c>/a/b2</c> is not treated as under <c>/a/b</c>).
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.NormalizePath(System.String)">
+            <summary>
+            Normalizes a path string for basic consistency by trimming whitespace and converting all directory separators
+            to the current platform's separator.
+            </summary>
+            <param name="path">The path to normalize.</param>
+            <returns>
+            A trimmed path using <see cref="F:System.IO.Path.DirectorySeparatorChar"/>. Returns <see cref="F:System.String.Empty"/> if <paramref name="path"/> is null/whitespace.
+            </returns>
+            <remarks>
+            This does not validate existence, resolve relative segments, or enforce absolute paths.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.NormalizeManifestPath(System.String)">
+            <summary>
+            Normalizes a manifest-relative path into a canonical form: forward slashes, no leading <c>./</c> segments,
+            and no leading slash.
+            </summary>
+            <param name="relativePath">A relative path as supplied by a manifest or caller.</param>
+            <returns>
+            A canonical relative path suitable for deterministic manifest storage and comparison. Returns <see cref="F:System.String.Empty"/> if input is null/whitespace.
+            </returns>
+            <remarks>
+            This function does not attempt to resolve <c>..</c> segments; callers should ensure their own policy on traversal.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.ParsePublicKeyBytes(System.String)">
+            <summary>
+            Parses raw public key bytes from a PEM, base64, or hex representation.
+            </summary>
+            <remarks>
+            <para>
+            The <c>--pin</c> contract is SubjectPublicKeyInfo (SPKI) bytes (the same bytes represented by PEM
+            <c>-----BEGIN PUBLIC KEY-----</c>). This is the canonical input for public-key pinning.
+            </para>
+            <para>
+            Accepts:
+            </para>
+            <list type="bullet">
+              <item><description>PEM SubjectPublicKeyInfo ("BEGIN PUBLIC KEY")</description></item>
+              <item><description>Base64-encoded DER bytes (SPKI)</description></item>
+              <item><description>Hex-encoded DER bytes (SPKI)</description></item>
+            </list>
+            <para>
+            Note: This method does not attempt to validate that the decoded bytes are a well-formed SPKI structure.
+            If invalid bytes are provided, callers will typically fail verification deterministically (pin mismatch).
+            </para>
+            </remarks>
+            <param name="input">Public key input string.</param>
+            <returns>Decoded DER bytes for the public key (SPKI).</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.GetSpkiBytes(System.Security.Cryptography.X509Certificates.X509Certificate2)">
+            <summary>
+            Returns the DER-encoded SubjectPublicKeyInfo (SPKI) bytes for a certificate public key.
+            </summary>
+            <remarks>
+            <para>
+            SPKI (SubjectPublicKeyInfo) is the canonical public-key representation used by this library for pinning.
+            It corresponds to PEM <c>-----BEGIN PUBLIC KEY-----</c>.
+            </para>
+            <para>
+            This method is used to enforce Law 6: public-key pinning hashes SPKI bytes, not <c>X509Certificate2.GetPublicKey()</c>.
+            </para>
+            </remarks>
+            <param name="cert">Certificate whose public key will be exported as SPKI.</param>
+            <returns>SPKI DER bytes, or an empty array if unavailable.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.FileSha256(System.String)">
+            <summary>
+            Computes the SHA-256 hash of a file and returns the result as uppercase hexadecimal.
+            </summary>
+            <param name="path">Path to the file to hash.</param>
+            <returns>Uppercase hexadecimal SHA-256 digest.</returns>
+            <remarks>
+            This method reads the entire file stream to compute the digest.
+            </remarks>
+            <exception cref="T:System.IO.IOException">Thrown if the file cannot be read.</exception>
+            <exception cref="T:System.UnauthorizedAccessException">Thrown if access is denied.</exception>
+        </member>
+        <member name="M:CtxSignlib.Functions.Sha256Hex(System.IO.Stream,System.Boolean)">
+            <summary>
+            Computes the SHA-256 hash of the provided stream and returns the result as uppercase hexadecimal.
+            </summary>
+            <param name="stream">The stream to hash.</param>
+            <param name="rewindIfSeekable">
+            If true and the stream supports seeking, the stream position is restored to its original value after hashing.
+            </param>
+            <returns>Uppercase hexadecimal SHA-256 digest.</returns>
+            <remarks>
+            This method reads from the stream's current position to EOF. If <paramref name="rewindIfSeekable"/> is true,
+            and the stream is seekable, the original position is restored after hashing.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.OpenReadLocked(System.String)">
+            <summary>
+            Opens a file for read-only hashing/verification with restrictive sharing to reduce TOCTOU file-swap opportunities,
+            and returns the open stream.
+            </summary>
+            <param name="path">Path to the file.</param>
+            <returns>
+            An open <see cref="T:System.IO.FileStream"/> with <see cref="F:System.IO.FileAccess.Read"/> and <see cref="F:System.IO.FileShare.Read"/>.
+            </returns>
+            <remarks>
+            On Windows, <see cref="F:System.IO.FileShare.Read"/> prevents other processes from opening the file for write or delete
+            while this stream is open (subject to privileges/OS policy).
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.Sha256Hex(System.Byte[])">
+            <summary>
+            Computes the SHA-256 hash of the provided byte array and returns the result as uppercase hexadecimal.
+            </summary>
+            <param name="data">The data to hash.</param>
+            <returns>Uppercase hexadecimal SHA-256 digest.</returns>
+            <remarks>
+            If <paramref name="data"/> is empty, the returned digest is the SHA-256 of an empty input.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.PublicKeySha256(System.Security.Cryptography.X509Certificates.X509Certificate2)">
+            <summary>
+            Computes the SHA-256 hash of an X.509 certificate's SubjectPublicKeyInfo (SPKI) bytes and returns uppercase hex.
+            </summary>
+            <param name="cert">The certificate whose SPKI bytes will be hashed.</param>
+            <returns>
+            Uppercase hexadecimal SHA-256 digest of the certificate SPKI bytes.
+            Returns <see cref="F:System.String.Empty"/> if <paramref name="cert"/> is null or SPKI export is unavailable.
+            </returns>
+            <remarks>
+            <para>
+            This helper defines the library's public-key pinning identity:
+            SHA-256 over DER SubjectPublicKeyInfo (SPKI) bytes (PEM "BEGIN PUBLIC KEY").
+            </para>
+            <para>
+            Do not replace this with <c>X509Certificate2.GetPublicKey()</c>; that returns key bits, not SPKI,
+            and will not match the <c>--pin</c>/<c>--pubpin</c> contract.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.FixedTimeEquals(System.Byte[],System.Byte[])">
+            <summary>
+            Compares two byte arrays using a fixed-time comparison to reduce timing side-channel leakage.
+            </summary>
+            <param name="a">First byte array.</param>
+            <param name="b">Second byte array.</param>
+            <returns><c>true</c> if the arrays are non-null, have the same length, and contain identical bytes; otherwise <c>false</c>.</returns>
+            <remarks>
+            Uses <see cref="M:System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan{System.Byte},System.ReadOnlySpan{System.Byte})"/> after validating lengths.
+            Length mismatches return <c>false</c> without attempting comparison.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.HexBytesEquals(System.String,System.String)">
+            <summary>
+            Decodes two hexadecimal strings to bytes and compares them using fixed-time comparison.
+            </summary>
+            <param name="hexA">First hexadecimal string.</param>
+            <param name="hexB">Second hexadecimal string.</param>
+            <returns><c>true</c> if the decoded byte sequences are identical; otherwise <c>false</c>.</returns>
+            <remarks>
+            Input normalization removes non-hex characters and uppercases letters before decoding.
+            This method will throw if either input decodes to an invalid hex length (odd number of hex digits) or contains invalid characters after normalization.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.GetHexValue(System.Char)">
+            <summary>
+            Converts a single hexadecimal character into its numeric value.
+            </summary>
+            <param name="c">
+            A hexadecimal character in the range <c>0-9</c> or <c>A-F</c>.
+            Lowercase characters must be normalized before calling this method.
+            </param>
+            <returns>
+            The integer value represented by the hexadecimal character (0–15).
+            </returns>
+            <remarks>
+            <para>
+            This method performs strict validation and throws if the character is not a valid
+            uppercase hexadecimal digit.
+            </para>
+            <para>
+            For flexible parsing scenarios, prefer <see cref="M:CtxSignlib.Functions.TryDecodeHex(System.String,System.Byte[]@)"/>
+            or <see cref="M:CtxSignlib.Functions.DecodeHex(System.String)"/>, which handle normalization and validation.
+            </para>
+            </remarks>
+            <exception cref="T:System.FormatException">
+            Thrown if <paramref name="c"/> is not a valid hexadecimal character.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Functions.TryDecodeHex(System.String,System.Byte[]@)">
+            <summary>
+            Attempts to decode a hexadecimal string to bytes.
+            </summary>
+            <param name="hex">The hexadecimal string to decode.</param>
+            <param name="bytes">On success, receives the decoded bytes; otherwise an empty array.</param>
+            <returns><c>true</c> if decoding succeeded; otherwise <c>false</c>.</returns>
+            <remarks>
+            This method normalizes the input via <see cref="M:CtxSignlib.Functions.NormalizeHex(System.String)"/> before decoding.
+            Any decode error is caught and reported as <c>false</c>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.DecodeHex(System.String)">
+            <summary>
+            Decodes a hexadecimal string to bytes after normalizing it.
+            </summary>
+            <param name="hex">The hexadecimal string to decode.</param>
+            <returns>The decoded bytes.</returns>
+            <exception cref="T:System.FormatException">
+            Thrown if the normalized hex string has an odd length or contains invalid characters.
+            </exception>
+            <remarks>
+            Normalization strips all non-hex characters and uppercases letters. An empty input results in an empty byte array.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.EncodeHex(System.String)">
+            <summary>
+            Encodes a UTF-8 string into uppercase hexadecimal.
+            </summary>
+            <param name="input">The input string to encode.</param>
+            <returns>Uppercase hexadecimal representation of the UTF-8 bytes. Returns <see cref="F:System.String.Empty"/> if <paramref name="input"/> is null.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.EncodeHex(System.Byte[])">
+            <summary>
+            Encodes a byte array into uppercase hexadecimal.
+            </summary>
+            <param name="bytes">The bytes to encode.</param>
+            <returns>Uppercase hexadecimal representation. Returns <see cref="F:System.String.Empty"/> if <paramref name="bytes"/> is null or empty.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.NormalizeHex(System.String)">
+            <summary>
+            Normalizes a string containing hexadecimal characters by stripping all non-hex characters and uppercasing letters.
+            </summary>
+            <param name="input">The input string that may contain hex characters (and optionally other separators).</param>
+            <returns>
+            A string consisting only of uppercase hex digits (<c>0-9</c>, <c>A-F</c>).
+            Returns <see cref="F:System.String.Empty"/> if <paramref name="input"/> is null/whitespace.
+            </returns>
+            <remarks>
+            This is useful for accepting thumbprints or hashes that may include spaces, colons, or other formatting characters.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.ShortHash(System.String)">
+            <summary>
+            Computes a short, deterministic identifier by taking SHA-256 of the UTF-8 input and returning the first 12 bytes as uppercase hex.
+            </summary>
+            <param name="s">Input string to hash.</param>
+            <returns>
+            24-character uppercase hex string (12 bytes).
+            </returns>
+            <remarks>
+            This is not intended for cryptographic authentication. It is intended for compact, readable identifiers where collision risk is low but non-zero.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.ProgramHandle">
+            <summary>
+            Produces the platform-appropriate base program handle used to name service/task/app identifiers consistently across OS families.
+            </summary>
+            <returns>
+            A handle string formatted for the current OS:
+            Windows: service path-like (for example <c>\MyWebExt\FileEngine</c>),
+            macOS: reverse-DNS (for example <c>com.mywebext.fileengine</c>),
+            Linux/others: dot-separated (for example <c>mywebext.fileengine</c>).
+            </returns>
+            <remarks>
+            The handle format is intentionally stable and OS-conventional to support predictable installation artifacts.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.ProgramHandle(System.String)">
+            <summary>
+            Produces a platform-appropriate program handle by appending a sub-identifier to the base handle.
+            </summary>
+            <param name="p">Sub-identifier to append (normalized to lowercase). Null is treated as empty.</param>
+            <returns>
+            Windows: <c>{base}\{p}</c>; macOS/Linux: <c>{base}.{p}</c>.
+            </returns>
+            <remarks>
+            This is typically used to create consistent identifiers for sub-components (for example "host", "client", "updater").
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.ProgramHandle(System.String,System.String)">
+            <summary>
+            Produces a platform-appropriate program handle from an organization and product name.
+            </summary>
+            <param name="org">Organization identifier. If null/empty, defaults to <c>mywebext</c>.</param>
+            <param name="product">Product identifier. If null/empty, defaults to <c>app</c>.</param>
+            <returns>
+            Windows: <c>\{org}\{product}</c>;
+            macOS: <c>com.{org}.{product}</c> (lowercased);
+            Linux/others: <c>{org}.{product}</c> (lowercased).
+            </returns>
+            <remarks>
+            This helper supports generating stable identifiers for third-party developers while keeping OS conventions.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.HexEquals(System.String,System.String)">
+            <summary>
+            Compares two hex strings for equality after trimming, using case-insensitive comparison.
+            </summary>
+            <param name="a">First hex string.</param>
+            <param name="b">Second hex string.</param>
+            <returns><c>true</c> if equal ignoring case and surrounding whitespace; otherwise <c>false</c>.</returns>
+            <remarks>
+            This is a convenience comparer; it is not fixed-time and should not be used where timing resistance is required.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.StringEsc(System.String)">
+            <summary>
+            Removes newline characters from the provided string.
+            </summary>
+            <param name="s">Input string.</param>
+            <returns>The string with <c>\n</c> and <c>\r</c> removed. Returns empty string if <paramref name="s"/> is null.</returns>
+            <remarks>
+            Intended for making values safe for single-line logging or deterministic serialization surfaces.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.XMLEncode(System.String)">
+            <summary>
+            Encodes a string for XML contexts by escaping special characters.
+            </summary>
+            <param name="s">Input string.</param>
+            <returns>An XML-escaped string. Returns empty string if <paramref name="s"/> is null.</returns>
+            <remarks>
+            This performs minimal entity encoding for XML attributes/text:
+            <c>&amp;</c>, <c>&lt;</c>, <c>&gt;</c>, <c>&quot;</c>, <c>&apos;</c>.
+            It also attempts to avoid double-encoding existing entities by only encoding '&amp;' when it is not already part of <c>&amp;name;</c>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.XMLDecode(System.String)">
+            <summary>
+            Decodes common XML entities back into their character equivalents.
+            </summary>
+            <param name="s">XML-escaped string.</param>
+            <returns>A decoded string. Returns empty string if <paramref name="s"/> is null.</returns>
+            <remarks>
+            This performs a simple replacement pass and does not validate XML or handle numeric entities beyond those explicitly implemented.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.HTMLEncode(System.String)">
+            <summary>
+            Encodes a string for HTML contexts by escaping special characters.
+            </summary>
+            <param name="s">Input string.</param>
+            <returns>An HTML-escaped string. Returns empty string if <paramref name="s"/> is null.</returns>
+            <remarks>
+            Escapes: <c>&amp;</c>, <c>&lt;</c>, <c>&gt;</c>, <c>&quot;</c>, and apostrophe as <c>&amp;#39;</c>.
+            This is intended for basic output escaping and does not attempt full HTML sanitization.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.HTMLDecode(System.String)">
+            <summary>
+            Decodes common HTML entities back into their character equivalents.
+            </summary>
+            <param name="s">HTML-escaped string.</param>
+            <returns>A decoded string. Returns empty string if <paramref name="s"/> is null.</returns>
+            <remarks>
+            This performs a simple replacement pass and does not validate HTML or handle arbitrary/numeric entities beyond those explicitly implemented.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.Null(System.String)">
+            <summary>
+            Determines whether a string is null, empty, or consists only of whitespace.
+            </summary>
+            <param name="s">The string to test.</param>
+            <returns><c>true</c> if null/empty/whitespace; otherwise <c>false</c>.</returns>
+            <remarks>
+            The <see cref="T:System.Diagnostics.CodeAnalysis.NotNullWhenAttribute"/> annotation informs the compiler that when this method returns <c>false</c>,
+            <paramref name="s"/> is not null.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.GetStringOrNull(System.Text.Json.JsonElement,System.String)">
+            <summary>
+            Reads a JSON string property by name and returns its value, or <c>null</c> if the property is missing or not a JSON string.
+            </summary>
+            <param name="root">The JSON element containing the property.</param>
+            <param name="name">The property name.</param>
+            <returns>The string value if present and a JSON string; otherwise <c>null</c>.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.TryGetString(System.Text.Json.JsonElement,System.String,System.String@)">
+            <summary>
+            Attempts to read a JSON string property by name.
+            </summary>
+            <param name="root">The JSON element containing the property.</param>
+            <param name="name">The property name.</param>
+            <param name="value">On success, receives the string value; otherwise <c>null</c>.</param>
+            <returns><c>true</c> if the property exists and is a JSON string with a non-null value; otherwise <c>false</c>.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.ToUtf8Bytes(System.String)">
+            <summary>
+            Encodes a string as UTF-8 bytes.
+            </summary>
+            <param name="s">Input string.</param>
+            <returns>UTF-8 bytes, or an empty array if <paramref name="s"/> is null.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.FromUtf8Bytes(System.Byte[])">
+            <summary>
+            Decodes UTF-8 bytes into a string.
+            </summary>
+            <param name="b">UTF-8 byte array.</param>
+            <returns>The decoded string, or <see cref="F:System.String.Empty"/> if <paramref name="b"/> is null or empty.</returns>
+        </member>
+        <member name="M:CtxSignlib.Functions.ReadAllBytesSafe(System.String)">
+            <summary>
+            Reads all bytes from a file.
+            </summary>
+            <param name="path">Path to the file.</param>
+            <returns>The file contents.</returns>
+            <remarks>
+            This is a thin wrapper over <see cref="M:System.IO.File.ReadAllBytes(System.String)"/> to keep call sites uniform.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])">
+            <summary>
+            Writes bytes to a file using an atomic replace strategy to avoid partially-written outputs.
+            </summary>
+            <param name="path">Destination file path.</param>
+            <param name="data">Data to write.</param>
+            <remarks>
+            Writes to <c>{path}.tmp</c> first, then replaces/moves into place.
+            If the destination exists, <see cref="M:System.IO.File.Replace(System.String,System.String,System.String)"/> is used; otherwise <see cref="M:System.IO.File.Move(System.String,System.String)"/>.
+            The destination directory is created if needed.
+            </remarks>
+            <exception cref="T:System.IO.IOException">Thrown for I/O failures (including replace/move errors).</exception>
+            <exception cref="T:System.UnauthorizedAccessException">Thrown if access is denied.</exception>
+        </member>
+        <member name="P:CtxSignlib.Functions.OSName">
+            <summary>
+            Gets a cached OS platform name for the current process.
+            </summary>
+            <value>
+            One of: <c>Windows</c>, <c>Linux</c>, <c>OSX</c>, or <c>FreeBSD</c>.
+            </value>
+            <remarks>
+            The value is computed once and cached for subsequent calls.
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Functions.IsWindows">
+            <summary>
+            Gets a value indicating whether the current OS is Windows.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Functions.IsOSX">
+            <summary>
+            Gets a value indicating whether the current OS is macOS.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Functions.IsLinux">
+            <summary>
+            Gets a value indicating whether the current OS is Linux.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Functions.IsFreeBSD">
+            <summary>
+            Gets a value indicating whether the current OS is FreeBSD.
+            </summary>
+        </member>
+        <member name="T:CtxSignlib.Manifest.DetailedManifestFileVerification">
+             <summary>
+             Performs strict manifest verification and returns a detailed categorized result.
+             </summary>
+             <remarks>
+             This class preserves strict verification semantics:
+             listed files must be present,
+             present files must hash-match,
+             and unreadable existing files are fatal.
+            
+             It does not replace or weaken <see cref="T:CtxSignlib.Manifest.ManifestVerifier"/>.
+             It adds a richer reporting surface for callers that need categorized file lists.
+             </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.DetailedManifestFileVerification.VerifyManifestDetailed(System.String,System.String)">
+            <summary>
+            Verifies all manifest-listed files in strict mode and returns only pass/fail.
+            </summary>
+            <param name="rootDir">The root directory that all manifest file paths must resolve under.</param>
+            <param name="manifestPath">
+            Full or relative path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <returns>
+            <c>true</c> if the result satisfies strict manifest verification semantics;
+            otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Strict mode means:
+            missing file = fail,
+            bad hash = fail,
+            unreadable present file = fail.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.DetailedManifestFileVerification.VerifyManifestDetailedResult(System.String,System.String)">
+             <summary>
+             Verifies all manifest-listed files in strict mode and returns detailed categorized results.
+             </summary>
+             <param name="rootDir">The root directory that all manifest file paths must resolve under.</param>
+             <param name="manifestPath">
+             Full or relative path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+             Must resolve to a location inside <paramref name="rootDir"/>.
+             </param>
+             <returns>
+             A detailed result containing passed, missing, failed, and unreadable file lists.
+             </returns>
+             <remarks>
+             This method applies strict verification semantics over the shared categorized manifest result model.
+            
+             The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+             using strict verification semantics.
+            
+             Excluded files remain excluded exactly as they are in the existing manifest verification model.
+             </remarks>
+        </member>
+        <member name="T:CtxSignlib.Manifest.ManifestExclude">
+            <summary>
+            Represents a manifest exclusion rule for a directory or file path, with an optional content-filtering regular expression.
+            </summary>
+            <remarks>
+            <para>
+            Rules are interpreted by <see cref="T:CtxSignlib.Manifest.ManifestBuilder"/> as follows:
+            </para>
+            <list type="bullet">
+            <item><description>
+            If <see cref="P:CtxSignlib.Manifest.ManifestExclude.Path"/> ends with <c>/</c>, it is treated as a directory prefix exclusion (all files under that prefix are excluded).
+            Directory excludes must not define <see cref="P:CtxSignlib.Manifest.ManifestExclude.Regex"/>.
+            </description></item>
+            <item><description>
+            Otherwise it is treated as an exact file rule keyed by normalized manifest path.
+            </description></item>
+            <item><description>
+            If <see cref="P:CtxSignlib.Manifest.ManifestExclude.Regex"/> is null/empty for a file rule, the file is fully excluded.
+            </description></item>
+            <item><description>
+            If <see cref="P:CtxSignlib.Manifest.ManifestExclude.Regex"/> is present for a file rule, the file remains included but its hash is computed after applying the regex
+            removal to UTF-8 decoded text content (non-UTF-8 content causes an error).
+            </description></item>
+            </list>
+            <para>
+            Paths are expected to be manifest-relative and are normalized to forward slashes by <see cref="M:CtxSignlib.Functions.NormalizeManifestPath(System.String)"/>.
+            </para>
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestExclude.Path">
+            <summary>
+            Gets or sets the manifest-relative path for the exclusion rule.
+            </summary>
+            <remarks>
+            Directory exclusions are indicated by a trailing <c>/</c> (for example <c>bin/</c>).
+            File exclusions should be an exact manifest path (for example <c>appsettings.json</c>).
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestExclude.Regex">
+            <summary>
+            Gets or sets an optional regular expression pattern used for content filtering prior to hashing.
+            </summary>
+            <remarks>
+            When set for a file rule, the file is still included in the manifest, but its SHA-256 hash is computed from
+            the UTF-8 decoded text with all matches removed. Directory rules must not specify a regex.
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Manifest.ManifestBuilder">
+            <summary>
+            Provides methods for building or updating a manifest that records file hashes and supports exclusion rules.
+            </summary>
+            <remarks>
+            <para>
+            The manifest output includes:
+            </para>
+            <list type="bullet">
+            <item><description>A deterministic list of files with SHA-256 hashes and sizes (ordering is deterministic; contents may change if files change).</description></item>
+            <item><description>An <c>excludes</c> array that may contain directory prefix exclusions and file exclusions (optionally with regex filtering).</description></item>
+            </list>
+            <para>
+            Exclusion rules may be reused from an existing manifest (if present), and can be merged with an external, newline-delimited
+            excludes file containing path-only entries.
+            </para>
+            <para>
+            Output ordering is deterministic: directory excludes first (sorted), then file excludes (sorted), then files sorted by path.
+            </para>
+            <para>
+            Note: the manifest includes <c>createdUtc</c>, which intentionally varies between runs.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.ManifestBuilder.BuildOrUpdate(System.String,System.String,System.String)">
+            <summary>
+            Builds or updates a manifest at <paramref name="outManifestPath"/> by hashing all files beneath <paramref name="rootDir"/>,
+            applying exclusion rules, and writing a JSON manifest.
+            </summary>
+            <param name="rootDir">Root directory to enumerate and hash.</param>
+            <param name="outManifestPath">
+            Destination path for the manifest JSON. If relative, it is resolved under <paramref name="rootDir"/>.
+            If a manifest already exists here, its <c>excludes</c> array is reused (if present).
+            </param>
+            <param name="pathToExcludesFile">
+            Optional path to a newline-delimited excludes file. Lines are treated as path-only exclude entries; blank lines and lines starting with <c>#</c> are ignored.
+            </param>
+            <returns>The number of file entries written to the manifest.</returns>
+            <remarks>
+            <para>
+            Exclusion rules:
+            </para>
+            <list type="bullet">
+            <item><description>
+            Directory excludes are specified by paths ending in <c>/</c>. They exclude all files under that prefix and must not specify regex.
+            </description></item>
+            <item><description>
+            File excludes are exact path rules. If the rule has no regex, the file is fully excluded.
+            If the rule has a regex, the file remains included and its hash is computed after removing regex matches from UTF-8 text.
+            </description></item>
+            </list>
+            <para>
+            The manifest output file itself and its common signature companion name <c>{manifest}.sig</c> are excluded to prevent self-referential hashing.
+            </para>
+            <para>
+            Hash filtering requires the file to be valid UTF-8; otherwise an exception is thrown.
+            </para>
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Manifest.ManifestPartialVerificationResult">
+            <summary>
+            Represents the categorized result of a manifest verification operation.
+            </summary>
+            <remarks>
+            This object records the observed state of files listed in a manifest.
+            The verification engine populates the file lists and wrappers determine
+            the policy outcome (strict vs partial).
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.PassedFiles">
+            <summary>
+            Gets the list of files that were present and matched the expected hash.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.MissingFiles">
+            <summary>
+            Gets the list of files that were listed in the manifest but were not present.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.FailedFiles">
+            <summary>
+            Gets the list of files that were present but whose hash did not match the manifest.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.UnreadableFiles">
+            <summary>
+            Gets the list of files that existed but could not be read.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success">
+            <summary>
+            Gets or sets the overall success state determined by the calling verification mode.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.ManifestAuthenticated">
+            <summary>
+            Gets or sets whether the manifest signature authentication step succeeded.
+            </summary>
+            <remarks>
+            For unsigned manifest verification this will remain <c>false</c>.
+            Signed-manifest verification paths set this to <c>true</c> after
+            successful CMS signature validation.
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.IsStrictlyValid">
+            <summary>
+            Indicates whether the result satisfies strict verification semantics.
+            </summary>
+            <remarks>
+            Strict mode requires:
+            - no missing files
+            - no failed files
+            - no unreadable files
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.IsPartiallyValid">
+            <summary>
+            Indicates whether the result satisfies partial verification semantics.
+            </summary>
+            <remarks>
+            Partial mode allows missing files but still requires:
+            - no failed files
+            - no unreadable files
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.ExpectedHashByPath">
+            <summary>
+            Maps manifest-relative file paths to their expected SHA-256 value.
+            </summary>
+            <remarks>
+            This is used internally so legacy APIs can rebuild the original
+            failure dictionary structure grouped by expected hash.
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Manifest.ManifestPartialVerifier">
+            <summary>
+            Verifies manifest-listed content in partial mode.
+            </summary>
+            <remarks>
+            Partial mode preserves the current manifest parsing and path-trust rules,
+            but changes file-presence semantics:
+            missing files are reported and are non-fatal by themselves,
+            while present files must still validate exactly.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.ManifestPartialVerifier.VerifyManifestPartial(System.String,System.String)">
+            <summary>
+            Verifies a manifest in partial mode.
+            </summary>
+            <param name="rootDir">Root directory that all manifest entries must resolve under.</param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <returns>
+            <c>true</c> if the result satisfies partial manifest verification semantics;
+            otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Missing files are reported but do not fail partial verification by themselves.
+            Malformed manifests and trust-boundary violations still throw, matching the strict parser expectations.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.ManifestPartialVerifier.VerifyManifestPartialDetailed(System.String,System.String)">
+            <summary>
+            Verifies a manifest in partial mode and returns categorized file results.
+            </summary>
+            <param name="rootDir">Root directory that all manifest entries must resolve under.</param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <returns>
+            A detailed partial verification result containing passed, missing, failed, and unreadable file lists.
+            </returns>
+            <remarks>
+            Missing files are non-fatal in this mode.
+            Present unreadable files and present hash-mismatched files are fatal.
+            Malformed manifests and invalid trust-boundary inputs still throw.
+            The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+            using partial verification semantics.
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Manifest.ManifestVerifier">
+             <summary>
+             Performs strict manifest verification using the legacy API surface.
+             </summary>
+             <remarks>
+             This class preserves the original ctxsignlib strict verification API:
+            
+             bool VerifyManifest(string rootDir, string manifestPath, out Dictionary&lt;string,List&lt;string&gt;&gt; failed)
+            
+             Internally it now uses the shared ManifestVerificationCore engine and
+             reconstructs the legacy grouped failure dictionary.
+             </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.ManifestVerifier.VerifyManifest(System.String,System.String,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}}@)">
+            <summary>
+            Verifies a manifest in strict mode and returns legacy grouped failure results.
+            </summary>
+            <param name="rootDir">
+            Root directory that all manifest paths must resolve under.
+            </param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            </param>
+            <param name="failed">
+            Legacy failure dictionary grouped by expected SHA-256 value.
+            </param>
+            <returns>
+            True if strict manifest verification succeeds; otherwise false.
+            </returns>
+        </member>
+        <member name="T:CtxSignlib.Manifest.SignedManifestPartialVerifier">
+            <summary>
+            Verifies a signed manifest in partial mode.
+            </summary>
+            <remarks>
+            This preserves the existing signed-manifest authentication contract:
+            the manifest signature is verified first using public-key pinning,
+            then authenticated manifest content is evaluated in partial mode.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.SignedManifestPartialVerifier.VerifySignedManifestPartial(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a signed manifest in partial mode.
+            </summary>
+            <param name="rootDir">The root directory that the manifest and signature must reside under.</param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="sigPath">
+            Path to the detached signature file. If null or whitespace, defaults to <c>{manifestPath}.sig</c>.
+            If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer public key SPKI bytes, expressed as hex.
+            </param>
+            <param name="signatureResult">
+            Receives the result of the detached CMS signature verification step.
+            </param>
+            <returns>
+            <c>true</c> if signature verification succeeds and the authenticated manifest result
+            satisfies partial verification semantics; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Missing files are non-fatal in partial mode.
+            Signature failure is always fatal.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.SignedManifestPartialVerifier.VerifySignedManifestPartialDetailed(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a signed manifest in partial mode and returns detailed categorized results.
+            </summary>
+            <param name="rootDir">The root directory that the manifest and signature must reside under.</param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="sigPath">
+            Path to the detached signature file. If null or whitespace, defaults to <c>{manifestPath}.sig</c>.
+            If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer public key SPKI bytes, expressed as hex.
+            Non-hex characters are ignored during normalization.
+            </param>
+            <param name="signatureResult">
+            Receives the result of the detached CMS signature verification step.
+            </param>
+            <returns>
+            A detailed partial verification result.
+            </returns>
+            <remarks>
+            If signature verification fails, the method returns a failed result immediately and does not evaluate manifest file entries.
+            Missing files are reported but are non-fatal in partial mode.
+            The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+            using partial verification semantics after signed-manifest authentication succeeds.
+            </remarks>
+            <exception cref="T:System.ArgumentException">
+            Thrown if <paramref name="rootDir"/>, <paramref name="manifestPath"/>, or <paramref name="pinnedPublicKeySha256"/> is null or whitespace,
+            or if the normalized pin is empty.
+            </exception>
+            <exception cref="T:System.IO.DirectoryNotFoundException">Thrown if <paramref name="rootDir"/> does not exist.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if <paramref name="manifestPath"/> or the resolved <paramref name="sigPath"/> is outside <paramref name="rootDir"/>.
+            </exception>
+        </member>
+        <member name="T:CtxSignlib.Manifest.SignedManifestVerifier">
+            <summary>
+            Verifies a manifest using a detached CMS/PKCS#7 signature with public-key pinning, then verifies the manifest’s file hashes.
+            </summary>
+            <remarks>
+            <para>
+            This class composes two verification steps:
+            </para>
+            <list type="number">
+            <item><description>
+            Signature verification: validates a detached CMS signature over the manifest file and enforces a pinned public-key SHA-256 (<c>--pubpin</c>).
+            </description></item>
+            <item><description>
+            Content verification: validates all file hashes listed in the manifest (honoring manifest exclude rules).
+            </description></item>
+            </list>
+            <para>
+            Trust boundary:
+            </para>
+            <list type="bullet">
+            <item><description>
+            <c>manifestPath</c> and <c>sigPath</c> must resolve to locations inside <c>rootDir</c> (otherwise this API throws).
+            </description></item>
+            <item><description>
+            Manifest file entries are treated as untrusted. The underlying manifest verifier enforces that each listed path resolves under <c>rootDir</c>;
+            escaping paths are treated as failures (reported) rather than being accessed.
+            </description></item>
+            </list>
+            <para>
+            This API returns <c>false</c> if either step fails (signature invalid/missing/pin mismatch, or any manifest file verification failure).
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Manifest.SignedManifestVerifier.VerifySignedManifest(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}}@)">
+            <summary>
+            Verifies a signed manifest by validating its detached CMS signature (with public-key pinning) and then validating the manifest’s file hashes.
+            </summary>
+            <param name="rootDir">The root directory that the manifest and signature must reside under, and that all manifest file entries must resolve under.</param>
+            <param name="manifestPath">
+            Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="sigPath">
+            Path to the detached signature file. If null/whitespace, defaults to <c>{manifestPath}.sig</c>.
+            If relative, it is resolved under <paramref name="rootDir"/>.
+            Must resolve to a location inside <paramref name="rootDir"/>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            The pinned signer identity in <c>--pubpin</c> form: SHA-256 of the signer's public key SPKI DER bytes (hex).
+            This corresponds to the Laws in <c>Functions.cs</c> where <c>--pubpin = SHA-256(--pin)</c> and <c>--pin</c> is SPKI DER
+            (PEM <c>BEGIN PUBLIC KEY</c>).
+            Non-hex characters are ignored during normalization.
+            </param>
+            <param name="signatureResult">
+            Receives the result code from signature verification (for example: Ok, SignatureMissing, BadSignature, WrongSigner).
+            </param>
+            <param name="failedFiles">
+            Receives a grouped set of manifest file verification failures, keyed by expected SHA-256, with values listing the failing manifest-relative paths.
+            </param>
+            <returns>
+            <c>true</c> if the signature verifies successfully under the pinned public key and the manifest contents verify with zero file failures;
+            otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            <para>
+            Return behavior:
+            </para>
+            <list type="bullet">
+            <item><description>
+            If signature verification fails, the method returns <c>false</c> immediately and does not perform file verification.
+            </description></item>
+            <item><description>
+            If signature verification succeeds, the manifest file list is verified. Any missing/mismatching/escaping paths cause <c>false</c>,
+            and details are returned in <paramref name="failedFiles"/>.
+            </description></item>
+            </list>
+            <para>
+            Exceptions are reserved for invalid inputs, violated trust-boundary constraints (manifest/signature outside root), or malformed manifest structure.
+            </para>
+            </remarks>
+            <exception cref="T:System.ArgumentException">
+            Thrown if <paramref name="rootDir"/>, <paramref name="manifestPath"/>, or <paramref name="pinnedPublicKeySha256"/> is null/whitespace
+            (or the pin normalizes to empty).
+            </exception>
+            <exception cref="T:System.IO.DirectoryNotFoundException">Thrown if <paramref name="rootDir"/> does not exist.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if <paramref name="manifestPath"/> or the resolved signature path is outside <paramref name="rootDir"/>.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Manifest.SignedManifestVerifier.VerifySignedManifest(System.String,System.String,System.String,System.String,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}}@)">
+            <summary>
+            Verifies a signed manifest and returns only the file verification failures, omitting the signature result code.
+            </summary>
+            <param name="rootDir">The root directory that the manifest and signature must reside under, and that all manifest file entries must resolve under.</param>
+            <param name="manifestPath">Path to the manifest JSON file. If relative, it is resolved under <paramref name="rootDir"/>.</param>
+            <param name="sigPath">
+            Path to the detached signature file. If null/whitespace, defaults to <c>{manifestPath}.sig</c>.
+            If relative, it is resolved under <paramref name="rootDir"/>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            <c>--pubpin</c>: SHA-256 of the signer's public key SPKI DER bytes (hex). Non-hex characters are ignored during normalization.
+            </param>
+            <param name="failedFiles">
+            Receives a grouped set of manifest file verification failures, keyed by expected SHA-256, with values listing the failing manifest-relative paths.
+            </param>
+            <returns>
+            <c>true</c> if the signature verifies successfully under the pinned public key and the manifest contents verify with zero file failures;
+            otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            This overload is a convenience wrapper that discards the signature status code. Use the full overload when you need to distinguish
+            signature failures from file-hash failures.
+            </remarks>
+        </member>
+        <member name="T:CtxSignlib.Signing.CMSWriter">
+            <summary>
+            Provides CMS / PKCS#7 detached signing helpers.
+            </summary>
+            <remarks>
+            <para>
+            This class produces detached CMS (Cryptographic Message Syntax) signatures suitable for portable verification.
+            The signer certificate is embedded (end-cert only) so verification can pin the signer using values extracted
+            from the CMS itself (thumbprint / raw public key / public-key SHA-256) without consulting OS certificate stores.
+            </para>
+            <para>
+            This implementation does not add optional signed attributes such as signing time.
+            </para>
+            <para>
+            Note: CMS signature bytes are not guaranteed to be identical across runs for all key algorithms/providers
+            (for example, ECDSA signatures are typically non-deterministic). The security contract of this library is
+            based on deterministic verification and explicit signer pinning, not byte-for-byte signature reproducibility.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Signing.CMSWriter.SignDetachment(System.Byte[],System.Security.Cryptography.X509Certificates.X509Certificate2)">
+            <summary>
+            Creates a detached CMS / PKCS#7 signature over the provided content bytes.
+            </summary>
+            <param name="content">The content to sign.</param>
+            <param name="signingCert">
+            The X.509 certificate containing an accessible private key used to generate the signature.
+            </param>
+            <returns>Encoded CMS / PKCS#7 signature bytes (detached).</returns>
+            <remarks>
+            <para>
+            The signer certificate is embedded using <see cref="F:System.Security.Cryptography.X509Certificates.X509IncludeOption.EndCertOnly"/> (no chain).
+            Verification is expected to enforce trust through explicit pinning against the signer contained in the CMS.
+            </para>
+            <para>
+            This method does not timestamp the signature and does not add signing-time attributes.
+            </para>
+            </remarks>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="signingCert"/> is null.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
+            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS signature generation fails.</exception>
+        </member>
+        <member name="M:CtxSignlib.Signing.CMSWriter.SignDetachment(System.String,System.String,System.Security.Cryptography.X509Certificates.X509Certificate2)">
+            <summary>
+            Creates a detached CMS / PKCS#7 signature for a file and writes it to disk.
+            </summary>
+            <param name="contentPath">Path to the file whose contents will be signed.</param>
+            <param name="sigPath">Destination path for the generated signature file.</param>
+            <param name="signingCert">
+            The X.509 certificate containing an accessible private key used to generate the signature.
+            </param>
+            <remarks>
+            The content file is fully read into memory before signing.
+            The signature file is written using <see cref="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])"/>
+            to prevent partially-written outputs.
+            </remarks>
+            <exception cref="T:System.ArgumentException">Thrown if <paramref name="contentPath"/> or <paramref name="sigPath"/> is null/whitespace.</exception>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="signingCert"/> is null.</exception>
+            <exception cref="T:System.IO.FileNotFoundException">Thrown if <paramref name="contentPath"/> does not exist.</exception>
+            <exception cref="T:System.InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
+            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS signature generation fails.</exception>
+            <exception cref="T:System.IO.IOException">Thrown if writing the signature file fails.</exception>
+            <exception cref="T:System.UnauthorizedAccessException">Thrown if access to the content or signature path is denied.</exception>
+        </member>
+        <member name="T:CtxSignlib.Verify.VerifyResult">
+            <summary>
+            Represents the result of a CMS / PKCS#7 detached signature verification operation.
+            </summary>
+            <remarks>
+            These values distinguish between missing inputs, cryptographic failures,
+            and signer identity mismatches (pinning failures).
+            </remarks>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.Ok">
+            <summary>
+            Verification succeeded and the signer matched the pinned identity.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.ContentMissing">
+            <summary>
+            The content to be verified was missing or not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.SignatureMissing">
+            <summary>
+            The detached signature file or bytes were missing.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.BadSignature">
+            <summary>
+            The CMS structure was invalid or cryptographic verification failed.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.NoSigner">
+            <summary>
+            No signer certificate was present in the CMS message.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Verify.VerifyResult.WrongSigner">
+            <summary>
+            The signature was cryptographically valid, but the signer identity did not match the pinned value.
+            </summary>
+        </member>
+        <member name="T:CtxSignlib.Verify.CMSVerifier">
+            <summary>
+            Provides detached CMS / PKCS#7 verification helpers with explicit signer pinning modes.
+            </summary>
+            <remarks>
+            <para><b>Contract (mirrors the immutable CLI laws in Functions.cs):</b></para>
+            <list type="bullet">
+            <item>
+            <description>
+            <c>--thumb</c> pins by signer certificate thumbprint (compares against the signer certificate embedded in the CMS signature).
+            </description>
+            </item>
+            <item>
+            <description>
+            <c>--pin</c> is the signer's raw public key bytes: DER SubjectPublicKeyInfo (SPKI), same bytes as PEM
+            <c>-----BEGIN PUBLIC KEY-----</c>.
+            </description>
+            </item>
+            <item>
+            <description>
+            <c>--pubpin</c> is the SHA-256 of <c>--pin</c> (64 hex).
+            </description>
+            </item>
+            </list>
+            <para>
+            Verification is crypto-only: <see cref="M:System.Security.Cryptography.Pkcs.SignedCms.CheckSignature(System.Boolean)"/> is called with <c>verifySignatureOnly: true</c>.
+            No OS trust store validation is performed, and all pin comparisons are made against the signer embedded in the CMS signature.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByThumbprint(System.String,System.String,System.String)">
+            <summary>
+            Verifies a detached CMS signature using a pinned signer certificate thumbprint.
+            </summary>
+            <param name="contentPath">Path to the original content file.</param>
+            <param name="sigPath">Path to the detached CMS signature file.</param>
+            <param name="pinnedThumbprint">
+            Expected signer certificate thumbprint (hex). Non-hex characters are ignored during normalization.
+            </param>
+            <returns>A <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the outcome.</returns>
+            <remarks>
+            Thumbprint pinning ties verification to a specific certificate instance.
+            For identity stability across certificate renewals that reuse the same key pair,
+            prefer <see cref="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByPublicKey(System.String,System.String,System.String)"/>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByThumbprint(System.Byte[],System.Byte[],System.String)">
+            <summary>
+            Verifies a detached CMS signature using a pinned signer certificate thumbprint.
+            </summary>
+            <param name="content">Original content bytes.</param>
+            <param name="sig">Detached CMS signature bytes.</param>
+            <param name="pinnedThumbprint">Expected signer certificate thumbprint (hex).</param>
+            <returns>A <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the outcome.</returns>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByPublicKey(System.String,System.String,System.String)">
+            <summary>
+            Verifies a detached CMS signature using a pinned SHA-256 of the signer public key (SPKI).
+            </summary>
+            <param name="contentPath">Path to the original content file.</param>
+            <param name="sigPath">Path to the detached CMS signature file.</param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer public key SPKI bytes (hex). Non-hex characters are ignored during normalization.
+            This value corresponds to <c>--pubpin</c>.
+            </param>
+            <returns>A <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the outcome.</returns>
+            <remarks>
+            This is the preferred pinning mode for long-lived trust because it remains valid across certificate renewals
+            that reuse the same key pair.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByPublicKey(System.Byte[],System.Byte[],System.String)">
+            <summary>
+            Verifies a detached CMS signature using a pinned SHA-256 of the signer public key (SPKI).
+            </summary>
+            <param name="content">Original content bytes.</param>
+            <param name="sig">Detached CMS signature bytes.</param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer public key SPKI bytes (hex). This value corresponds to <c>--pubpin</c>.
+            </param>
+            <returns>A <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the outcome.</returns>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentByRawPublicKey(System.String,System.String,System.String)">
+            <summary>
+            Verifies a detached CMS/PKCS#7 signature and pins the signer by a raw public key (SPKI).
+            </summary>
+            <remarks>
+            <para>
+            This method performs two checks:
+            </para>
+            <list type="number">
+            <item><description>Cryptographically verifies the detached CMS signature over <paramref name="contentPath"/>.</description></item>
+            <item><description>
+            Pins the signer identity by hashing the provided <paramref name="rawPublicKey"/> (SPKI / PEM "BEGIN PUBLIC KEY")
+            with SHA-256 (producing the <c>--pubpin</c> value) and comparing it to the signer embedded in the CMS signature.
+            </description></item>
+            </list>
+            <para>
+            <paramref name="rawPublicKey"/> is NOT a secret. It is public key material and may be supplied as PEM, base64, or hex.
+            </para>
+            </remarks>
+            <param name="contentPath">Path to the content file whose detached signature will be verified.</param>
+            <param name="sigPath">Path to the detached CMS signature file (e.g., *.sig) for <paramref name="contentPath"/>.</param>
+            <param name="rawPublicKey">
+            The signer's raw public key bytes (DER SubjectPublicKeyInfo / SPKI), supplied as PEM, base64, or hex.
+            This value corresponds to <c>--pin</c>.
+            </param>
+            <returns>
+            A <see cref="T:CtxSignlib.Verify.VerifyResult"/> indicating success (<see cref="F:CtxSignlib.Verify.VerifyResult.Ok"/>) or the reason verification failed.
+            </returns>
+        </member>
+        <member name="M:CtxSignlib.Verify.CMSVerifier.VerifyDetachmentOrThrow(System.Byte[],System.Byte[])">
+            <summary>
+            Performs cryptographic verification of a detached CMS signature without any signer pinning.
+            </summary>
+            <param name="content">Original content bytes.</param>
+            <param name="sig">Detached CMS signature bytes.</param>
+            <remarks>
+            This method validates only the cryptographic integrity of the signature.
+            It does not perform certificate chain validation or identity pinning.
+            </remarks>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="sig"/> is null.</exception>
+            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS decoding or signature verification fails.</exception>
+        </member>
+        <member name="T:CtxSignlib.Verify.ManifestFileVerification">
+            <summary>
+            Verifies a single file against an authenticated (signed) manifest in a TOCTOU-hardened way.
+            </summary>
+            <remarks>
+            <para>
+            Workflow:
+            </para>
+            <list type="number">
+              <item><description>Verify the manifest's detached CMS signature (crypto-only, pinned signer).</description></item>
+              <item><description>Locate the file entry inside the manifest.</description></item>
+              <item><description>Hash the file from a locked read handle and compare to the manifest SHA-256.</description></item>
+            </list>
+            <para>
+            This is <b>not</b> detached signature verification of the file bytes.
+            It is file integrity validation using a signed manifest as the trust anchor.
+            </para>
+            <para>
+            Failure details are returned via the <c>signatureResult</c> out parameter and the <c>failure</c> out string:
+            </para>
+            <list type="bullet">
+              <item><description><c>signatureResult</c> reports signature/identity failures (e.g., BadSignature, WrongSigner, ContentMissing).</description></item>
+              <item><description><c>failure</c> reports manifest/path/hash failures (e.g., FileNotInManifest, HashMismatch).</description></item>
+            </list>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifest(System.String,System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
+            <summary>
+            Verifies <paramref name="filePath"/> against a signed manifest using a pinned signer certificate thumbprint (<c>--thumb</c>).
+            </summary>
+            <param name="rootDir">Root directory that all verified files must reside under.</param>
+            <param name="filePath">Path to the target file (absolute, or relative to <paramref name="rootDir"/>).</param>
+            <param name="manifestPath">Path to the manifest JSON (absolute, or relative to <paramref name="rootDir"/>).</param>
+            <param name="sigPath">
+            Optional path to the manifest detached signature file. If null/empty, defaults to <c>{manifestPath}.sig</c>.
+            </param>
+            <param name="pinnedThumbprint">
+            Expected signer certificate thumbprint (hex). Non-hex characters are ignored during normalization.
+            </param>
+            <param name="signatureResult">
+            Receives the result of validating the manifest signature and signer identity pin.
+            </param>
+            <param name="expectedSha256">Receives the expected SHA-256 (hex) from the manifest for the target file.</param>
+            <param name="actualSha256">Receives the actual SHA-256 (hex) computed from the target file.</param>
+            <param name="failure">
+            Receives a deterministic failure code when signature validation succeeds but file/manifest checks fail:
+            <c>FileOutsideRoot</c>, <c>FileMissing</c>, <c>InvalidManifest</c>, <c>FileNotInManifest</c>, <c>HashMismatch</c>.
+            Empty string means no non-signature failure occurred.
+            </param>
+            <returns>
+            <c>true</c> if the manifest signature is valid (and pinned signer matches) and the file hash matches the manifest entry; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
+            File hashing uses a locked read handle via <see cref="M:CtxSignlib.Functions.OpenReadLocked(System.String)"/> to reduce TOCTOU file-swap opportunities.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifestByPublicKey(System.String,System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
+            <summary>
+            Verifies <paramref name="filePath"/> against a signed manifest using a pinned public-key SHA-256 (<c>--pubpin</c>).
+            </summary>
+            <param name="rootDir">Root directory that all verified files must reside under.</param>
+            <param name="filePath">Path to the target file (absolute, or relative to <paramref name="rootDir"/>).</param>
+            <param name="manifestPath">Path to the manifest JSON (absolute, or relative to <paramref name="rootDir"/>).</param>
+            <param name="sigPath">
+            Optional path to the manifest detached signature file. If null/empty, defaults to <c>{manifestPath}.sig</c>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer's public key SPKI bytes (hex).
+            This corresponds to <c>--pubpin</c>, where <c>--pubpin = SHA-256(--pin)</c> and <c>--pin</c> is SPKI DER
+            (PEM <c>BEGIN PUBLIC KEY</c>).
+            </param>
+            <param name="signatureResult">Receives the result of validating the manifest signature and signer pin.</param>
+            <param name="expectedSha256">Receives the expected SHA-256 (hex) from the manifest for the target file.</param>
+            <param name="actualSha256">Receives the actual SHA-256 (hex) computed from the target file.</param>
+            <param name="failure">
+            Receives a deterministic failure code when signature validation succeeds but file/manifest checks fail:
+            <c>FileOutsideRoot</c>, <c>FileMissing</c>, <c>InvalidManifest</c>, <c>FileNotInManifest</c>, <c>HashMismatch</c>.
+            </param>
+            <returns>
+            <c>true</c> if the manifest signature is valid (and pinned signer matches) and the file hash matches the manifest entry; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
+            File hashing uses a locked read handle via <see cref="M:CtxSignlib.Functions.OpenReadLocked(System.String)"/> to reduce TOCTOU file-swap opportunities.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifest(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
+            <summary>
+            Convenience overload: defaults the signature path to <c>{manifestPath}.sig</c>.
+            </summary>
+        </member>
+        <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifestByPublicKey(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
+            <summary>
+            Convenience overload: defaults the signature path to <c>{manifestPath}.sig</c>.
+            </summary>
+        </member>
+        <member name="T:CtxSignlib.Verify.PackageId">
+            <summary>
+            Generates deterministic package identifiers from expected file identity data.
+            </summary>
+            <remarks>
+            <para>
+            A package ID represents the identity of the full expected package content,
+            not the current state of an installation.
+            </para>
+            <para>
+            Canonical entry format:
+            </para>
+            <code>
+            normalized/path|EXPECTEDSHA256
+            </code>
+            <para>
+            Entries are normalized, de-duplicated, sorted using <see cref="P:System.StringComparer.Ordinal"/>,
+            joined with LF, encoded as UTF-8, and hashed with SHA-256.
+            </para>
+            <para>
+            Two packages with the same included file paths and expected hashes will always produce
+            the same package ID across platforms.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.PackageId.Generate(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+            <summary>
+            Generates a deterministic package ID from the full expected package contents
+            represented by a manifest verification result.
+            </summary>
+            <param name="result">
+            A manifest verification result whose expected-hash metadata represents the effective included package contents.
+            </param>
+            <returns>
+            Uppercase hexadecimal SHA-256 of the canonical package entry list.
+            Returns the SHA-256 of an empty UTF-8 payload if no included entries are present.
+            </returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+        </member>
+        <member name="M:CtxSignlib.Verify.PackageId.Generate(System.String,System.String)">
+            <summary>
+            Generates a deterministic package ID from a single relative file path and expected SHA-256.
+            </summary>
+            <param name="relativeFilePath">Relative file path.</param>
+            <param name="expectedSha256">Expected SHA-256 (hex) for the file.</param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical single-entry payload.</returns>
+        </member>
+        <member name="M:CtxSignlib.Verify.PackageId.Generate(System.Collections.Generic.IEnumerable{System.ValueTuple{System.String,System.String}})">
+            <summary>
+            Generates a deterministic package ID from a sequence of relative file paths and expected SHA-256 values.
+            </summary>
+            <param name="entries">
+            Sequence of tuples in the form (path, expectedSha256).
+            </param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical entry payload.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="entries"/> is null.</exception>
+        </member>
+        <member name="T:CtxSignlib.Verify.RepairPackageId">
+            <summary>
+            Generates deterministic repair package identifiers from manifest-governed file identity data.
+            </summary>
+            <remarks>
+            <para>
+            A repair package ID is derived only from the manifest-relative file path and the expected SHA-256 hash
+            of each file that must be satisfied by a package.
+            </para>
+            <para>
+            Failure reason is intentionally ignored. A missing file, unreadable file, or corrupt file produces the same
+            repair package ID as long as the required file path and expected manifest hash are the same.
+            </para>
+            <para>
+            Canonical entry format:
+            </para>
+            <code>
+            normalized/path|EXPECTEDSHA256
+            </code>
+            <para>
+            Entries are normalized, de-duplicated, sorted using <see cref="P:System.StringComparer.Ordinal"/>, joined with LF,
+            encoded as UTF-8, and hashed with SHA-256.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+            <summary>
+            Generates a deterministic repair package ID from the repair-relevant portions of a manifest verification result.
+            </summary>
+            <param name="result">
+            A manifest verification result containing categorized file state and expected-hash metadata.
+            </param>
+            <returns>
+            Uppercase hexadecimal SHA-256 of the canonical repair entry list.
+            Returns the SHA-256 of an empty UTF-8 payload if no repair-relevant entries are present.
+            </returns>
+            <remarks>
+            This method includes:
+            <list type="bullet">
+            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.MissingFiles"/></description></item>
+            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.FailedFiles"/></description></item>
+            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.UnreadableFiles"/></description></item>
+            </list>
+            <para>
+            <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.PassedFiles"/> are intentionally excluded.
+            </para>
+            </remarks>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if any repair-relevant path does not have an expected SHA-256 entry in the result metadata.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateMissing(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+            <summary>
+            Generates a deterministic repair package ID from only the missing-file portion of a manifest verification result.
+            </summary>
+            <param name="result">A manifest verification result containing expected-hash metadata.</param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical missing-file entry list.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if any missing path does not have an expected SHA-256 entry in the result metadata.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateFailed(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+            <summary>
+            Generates a deterministic repair package ID from only the failed-file portion of a manifest verification result.
+            </summary>
+            <param name="result">A manifest verification result containing expected-hash metadata.</param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical failed-file entry list.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if any failed path does not have an expected SHA-256 entry in the result metadata.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateUnreadable(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+            <summary>
+            Generates a deterministic repair package ID from only the unreadable-file portion of a manifest verification result.
+            </summary>
+            <param name="result">A manifest verification result containing expected-hash metadata.</param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical unreadable-file entry list.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+            <exception cref="T:System.InvalidOperationException">
+            Thrown if any unreadable path does not have an expected SHA-256 entry in the result metadata.
+            </exception>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(System.String,System.String)">
+            <summary>
+            Generates a deterministic repair package ID from a single relative file path and expected SHA-256.
+            </summary>
+            <param name="relativeFilePath">Relative file path.</param>
+            <param name="expectedSha256">Expected SHA-256 (hex) for the file.</param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical single-entry payload.</returns>
+        </member>
+        <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(System.Collections.Generic.IEnumerable{System.ValueTuple{System.String,System.String}})">
+            <summary>
+            Generates a deterministic repair package ID from a sequence of relative file paths and expected SHA-256 values.
+            </summary>
+            <param name="entries">
+            Sequence of tuples in the form (path, expectedSha256).
+            </param>
+            <returns>Uppercase hexadecimal SHA-256 of the canonical entry payload.</returns>
+            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="entries"/> is null.</exception>
+        </member>
+        <member name="T:CtxSignlib.Verify.SingleFileVerification">
+            <summary>
+            Provides convenience helpers for verifying a single signed file using detached CMS signatures.
+            </summary>
+            <remarks>
+            <para>
+            These helpers wrap <see cref="T:CtxSignlib.Verify.CMSVerifier"/> and provide simple pass/fail semantics
+            while still returning the underlying <see cref="T:CtxSignlib.Verify.VerifyResult"/> for detailed inspection.
+            </para>
+            <para>
+            If <c>sigPath</c> is null or empty, it defaults to <c>{contentPath}.sig</c>.
+            </para>
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFile(System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using thumbprint pinning (<c>--thumb</c>).
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="sigPath">
+            Path to the detached signature file. If null/empty, defaults to <c>{contentPath}.sig</c>.
+            </param>
+            <param name="pinnedThumbprint">
+            Expected signer certificate thumbprint (hex). Non-hex characters are ignored during normalization.
+            </param>
+            <param name="result">
+            Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.
+            </param>
+            <returns>
+            <c>true</c> if verification succeeds and the signer matches the pinned thumbprint; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            This method performs crypto-only verification and enforces explicit thumbprint pinning.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFileByPublicKey(System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using public-key SHA-256 pinning (<c>--pubpin</c>).
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="sigPath">
+            Path to the detached signature file. If null/empty, defaults to <c>{contentPath}.sig</c>.
+            </param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer's public key SPKI bytes (hex).
+            This value corresponds to <c>--pubpin</c> (where <c>--pubpin = SHA-256(--pin)</c> and <c>--pin</c> is SPKI DER).
+            </param>
+            <param name="result">
+            Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.
+            </param>
+            <returns>
+            <c>true</c> if verification succeeds and the signer matches the pinned public-key identity; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            Public-key pinning is generally more stable than thumbprint pinning,
+            as it remains valid across certificate renewals that reuse the same key pair.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFile(System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using thumbprint pinning and the default signature path.
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="pinnedThumbprint">
+            Expected signer certificate thumbprint (hex).
+            </param>
+            <param name="result">
+            Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.
+            </param>
+            <returns>
+            <c>true</c> if verification succeeds and the signer matches the pinned thumbprint; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            The signature file is assumed to be located at <c>{contentPath}.sig</c>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFileByPublicKey(System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using public-key SHA-256 pinning and the default signature path.
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="pinnedPublicKeySha256">
+            Expected SHA-256 of the signer's public key SPKI bytes (hex). This corresponds to <c>--pubpin</c>.
+            </param>
+            <param name="result">
+            Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.
+            </param>
+            <returns>
+            <c>true</c> if verification succeeds and the signer matches the pinned public-key identity; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            The signature file is assumed to be located at <c>{contentPath}.sig</c>.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFileByRawPublicKey(System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using raw public-key pinning (<c>--pin</c>).
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="sigPath">
+            Path to the detached signature file. If null/empty, defaults to <c>{contentPath}.sig</c>.
+            </param>
+            <param name="rawPublicKey">
+            The signer's raw public key in SPKI form (DER SubjectPublicKeyInfo), supplied as PEM (<c>BEGIN PUBLIC KEY</c>),
+            base64, or hex. This corresponds to <c>--pin</c> and is NOT a secret.
+            </param>
+            <param name="result">
+            Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.
+            </param>
+            <returns>
+            <c>true</c> if verification succeeds and the signer matches the pinned raw public key; otherwise <c>false</c>.
+            </returns>
+            <remarks>
+            This method derives <c>--pubpin</c> deterministically as SHA-256(SPKI) and verifies via public-key pinning.
+            </remarks>
+        </member>
+        <member name="M:CtxSignlib.Verify.SingleFileVerification.VerifyFileByRawPublicKey(System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
+            <summary>
+            Verifies a single signed file using raw public-key pinning and the default signature path.
+            </summary>
+            <param name="contentPath">Path to the content file.</param>
+            <param name="rawPublicKey">The signer's raw public key SPKI bytes, supplied as PEM/base64/hex.</param>
+            <param name="result">Receives the detailed <see cref="T:CtxSignlib.Verify.VerifyResult"/> describing the verification outcome.</param>
+            <returns><c>true</c> if verification succeeds; otherwise <c>false</c>.</returns>
+            <remarks>
+            The signature file is assumed to be located at <c>{contentPath}.sig</c>.
+            </remarks>
+        </member>
+    </members>
+</doc>
