@@ -843,6 +843,17 @@
             Gets the list of files that existed but could not be read.
             </summary>
         </member>
+        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.InvalidSyntaxFiles">
+            <summary>
+            Gets the list of files whose verification could not be completed because
+            the syntax of a rule or instruction associated with that file was invalid.
+            </summary>
+            <remarks>
+            Examples include malformed regex patterns or other malformed per-file
+            verification syntax that prevents a safe hash evaluation.
+            These files are not considered matched or mismatched; they are unverifiable.
+            </remarks>
+        </member>
         <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success">
             <summary>
             Gets or sets the overall success state determined by the calling verification mode.
@@ -867,6 +878,7 @@
             - no missing files
             - no failed files
             - no unreadable files
+            - no invalid syntax files
             </remarks>
         </member>
         <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.IsPartiallyValid">
@@ -877,6 +889,7 @@
             Partial mode allows missing files but still requires:
             - no failed files
             - no unreadable files
+            - no invalid syntax files
             </remarks>
         </member>
         <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.ExpectedHashByPath">
@@ -1386,6 +1399,12 @@
             <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="sig"/> is null.</exception>
             <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS decoding or signature verification fails.</exception>
         </member>
+        <member name="T:CtxSignlib.Verify.ManifestEntryHashResolver">
+            <summary>
+            Resolves how a manifest entry should be verified for a single target file and computes
+            both the expected and actual SHA-256 values using the same exclude semantics as ManifestBuilder.
+            </summary>
+        </member>
         <member name="T:CtxSignlib.Verify.ManifestFileVerification">
             <summary>
             Verifies a single file against an authenticated (signed) manifest in a TOCTOU-hardened way.
@@ -1397,7 +1416,7 @@
             <list type="number">
               <item><description>Verify the manifest's detached CMS signature (crypto-only, pinned signer).</description></item>
               <item><description>Locate the file entry inside the manifest.</description></item>
-              <item><description>Hash the file from a locked read handle and compare to the manifest SHA-256.</description></item>
+              <item><description>Compute the file hash using the same exclude semantics used by manifest creation.</description></item>
             </list>
             <para>
             This is <b>not</b> detached signature verification of the file bytes.
@@ -1440,7 +1459,8 @@
             </returns>
             <remarks>
             Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
-            File hashing uses a locked read handle via <see cref="M:CtxSignlib.Functions.OpenReadLocked(System.String)"/> to reduce TOCTOU file-swap opportunities.
+            File hashing is delegated to <see cref="T:CtxSignlib.Verify.ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
+            used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifestByPublicKey(System.String,System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
@@ -1470,7 +1490,8 @@
             </returns>
             <remarks>
             Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
-            File hashing uses a locked read handle via <see cref="M:CtxSignlib.Functions.OpenReadLocked(System.String)"/> to reduce TOCTOU file-swap opportunities.
+            File hashing is delegated to <see cref="T:CtxSignlib.Verify.ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
+            used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifest(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">

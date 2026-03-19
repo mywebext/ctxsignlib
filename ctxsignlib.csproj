@@ -3,79 +3,68 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+
     <!-- NuGet -->
     <IsPackable>true</IsPackable>
-    <!-- Set back to true later -->
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>ctxsignlib</PackageId>
-    <Version>1.1.2</Version>
-    <PackageVersion>1.1.2</PackageVersion>
+    <Version>1.1.4</Version>
+    <PackageVersion>1.1.4</PackageVersion>
+    <AssemblyVersion>1.1.4.0</AssemblyVersion>
+    <FileVersion>1.1.4.0</FileVersion>
+    <InformationalVersion>1.1.4</InformationalVersion>
+
     <Authors>Kenneth Poston</Authors>
-    <Company>Mywebext Service .llc</Company>
-    <Copyright>Copyright © 2026 Kenneth Poston, MyWebEXT Services .llc All rights reserved.</Copyright>
+    <Company>Mywebext Services LLC</Company>
+    <Copyright>Copyright © 2026 Kenneth Poston, Mywebext Services LLC. All rights reserved.</Copyright>
+
     <Product>CtxSignlib</Product>
     <AssemblyName>ctxsignlib</AssemblyName>
     <RootNamespace>CtxSignlib</RootNamespace>
+    <AssemblyTitle>CtxSign Library</AssemblyTitle>
+    <Title>CtxSign Library</Title>
 
     <Description>Portable CMS/PKCS#7 detached signing and verification library.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://www.mywebext.com/ctxsign</PackageProjectUrl>
-    <RepositoryUrl>https://ctxsign.mywebext.com</RepositoryUrl>
-    <RepositoryType>svn</RepositoryType>
+    <PackageProjectUrl>https://github.com/mywebext/ctxsignlib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mywebext/ctxsignlib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <!--RepositoryType>git</RepositoryType-->
+
     <PackageTags>ctxsignlib;ctxsign;cmssign;cmssignlib;cms;pkcs7;pkcs#7;detached;signature;signing;verification;cryptography;sha256;manifest;digital-signature;certificate;cross-platform;deterministic</PackageTags>
+
     <!-- Docs + symbols -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
-    <!-- README shown on nuget.org -->
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <AssemblyTitle>CtxSign Library</AssemblyTitle>
-    <DocumentationFile>C:\Users\Ken\source\repos\ctxsignlib\ctxsignlib.xml</DocumentationFile>
-    <Title>CtxSign Library</Title>
-    <PackageIcon>icon.png</PackageIcon>
-    <PackageReleaseNotes>Previous versions of ctxsignlib included refactored and restructured components by ChatGPT 5.2 that introduced unintended API drift. In particular, the semantics of --thumb, --pin, and --pubpin became inconsistent across surfaces, which could lead to confusion or misconfiguration.
+    <DocumentationFile>$(MSBuildProjectDirectory)\ctxsignlib.xml</DocumentationFile>
+    
+    <!-- Source Link / deterministic build -->
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <DebugType>portable</DebugType>
 
-This release corrects and formalizes those contracts to ensure strict, deterministic pin behavior moving forward.</PackageReleaseNotes>
-    <AssemblyVersion>1.1.1.0</AssemblyVersion>
-    <FileVersion>1.1.1.0</FileVersion>
-    <InformationalVersion>1.1.1</InformationalVersion>
+    <!-- README / icon -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
     <ApplicationIcon>ctxsign48.ico</ApplicationIcon>
+
+    <PackageReleaseNotes>Improved package metadata, repository/source integration, and generated API documentation path handling.</PackageReleaseNotes>
+
   </PropertyGroup>
+
   <ItemGroup>
-    <None Remove="ctxsignlib.xml" />
-  </ItemGroup>
-  <ItemGroup>
-    <Resource Include="ctxsign48.ico" />
-    <Resource Include="ctxsignlib.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Resource>
-  </ItemGroup>
-  <ItemGroup>
-    <!-- net8.0: use 8.x to match the runtime -->
     <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.0" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
+
   <ItemGroup>
-    <!-- global using static ctxsignlib.Functions (applies to this project only) -->
     <Using Include="CtxSignlib.Functions" Static="True" />
   </ItemGroup>
-  <ItemGroup>
-    <!-- Include README in the package root -->
-    <None Include="README.md" Pack="true" PackagePath="\" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Update="icon.png">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-  </ItemGroup>
-  <!-- How to publish to nuget
-  Step 1) using powershell build the package dotnet pack -c Release
-  Step 2) using MSVS Powershell sign the package:
-  
-  Step 3) using MSVS powersell push the package to nuget Note the params typically uses 2 -'s and not one:
-  try this dotnet nuget push .\bin\Release\ctxsignlib.1.0.2.nupkg -s https://api.nuget.org/v3/index.json -k $env:NUGET_API_KEY
- -->
-</Project>
 
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Update="icon.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>

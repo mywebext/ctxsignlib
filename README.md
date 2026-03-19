@@ -1,21 +1,22 @@
-
 # CtxSignlib
 
 Portable CMS / PKCS#7 detached signing and verification library for .NET.
 
-CtxSignlib is a deterministic manifest‑based trust model for verifying distributed software content.
+CtxSignlib is a deterministic manifest-based trust model for verifying distributed software content.
 
-CtxSignlib provides a deterministic, cross‑platform CMS (Cryptographic Message Syntax) signing and verification library built on .NET 8.
+CtxSignlib provides a deterministic, cross-platform CMS (Cryptographic Message Syntax) signing and verification library built on .NET 8.
 
 It is designed for portable verification workflows such as:
 
 - Detached signature validation
 - Signed manifest distribution
 - Secure file integrity enforcement
-- Deterministic public‑key pinning
+- Deterministic public-key pinning
 
-CtxSignlib performs crypto‑only verification and does not rely on OS trust stores.
+CtxSignlib performs crypto-only verification and does not rely on OS trust stores.
 Signer identity is validated through explicit pinning.
+
+Repository: https://github.com/mywebext/ctxsignlib
 
 --------------------------------------------------------------------------
 
@@ -96,7 +97,7 @@ CtxSignlib supports three explicit pinning modes.
 
 --thumb   Pins the exact certificate instance  
 --pin     Raw SPKI public key  
---pubpin  SHA‑256 hash of the SPKI public key (recommended)
+--pubpin  SHA-256 hash of the SPKI public key (recommended)
 
 Relationship:
 
@@ -106,7 +107,7 @@ SHA256(SPKI)
         ↓
 --pubpin
 
-Public‑key pinning allows identity continuity across certificate renewals that reuse the same key pair.
+Public-key pinning allows identity continuity across certificate renewals that reuse the same key pair.
 
 --------------------------------------------------------------------------
 
@@ -120,7 +121,7 @@ Creates detached CMS / PKCS#7 signatures.
 Core Verification
 
 CMSVerifier  
-Low‑level CMS verification engine.
+Low-level CMS verification engine.
 
 SingleFileVerification  
 Convenience helpers for verifying individual files.
@@ -164,6 +165,7 @@ Failure conditions:
 - Missing file
 - Hash mismatch
 - Unreadable file
+- Invalid syntax for a per-file verification rule
 
 Used for:
 
@@ -179,6 +181,7 @@ Failure conditions:
 
 - Hash mismatch
 - Unreadable file
+- Invalid syntax for a per-file verification rule
 
 Used for:
 
@@ -199,6 +202,8 @@ Authenticate Manifest
         ↓
 Evaluate File Integrity
 
+Single-file signed manifest verification also supports exact-path regex-filtered hashing rules recorded in excludes[].
+
 --------------------------------------------------------------------------
 
 # Detailed Verification Results
@@ -215,13 +220,16 @@ Fields:
 - MissingFiles
 - FailedFiles
 - UnreadableFiles
+- InvalidSyntaxFiles
 
 Policy evaluation helpers:
 
 - IsStrictlyValid
 - IsPartiallyValid
 
-This allows higher‑level systems to evaluate installation state and determine corrective actions such as repairing or requesting missing files.
+InvalidSyntaxFiles represents files whose verification could not be safely completed because a rule or instruction associated with that file was malformed, such as an invalid regex or regex-filtered content that is not valid UTF-8 text.
+
+This allows higher-level systems to evaluate installation state and determine corrective actions such as repairing or requesting missing files.
 
 --------------------------------------------------------------------------
 
@@ -238,12 +246,12 @@ normalized/path|EXPECTED_SHA256
 Algorithm:
 
 1. Normalize manifest path
-2. Normalize SHA‑256 hex
+2. Normalize SHA-256 hex
 3. Build canonical entries
 4. Remove duplicates
 5. Sort using StringComparer.Ordinal
 6. Join entries using LF
-7. SHA‑256 hash the UTF‑8 payload
+7. SHA-256 hash the UTF-8 payload
 
 Example:
 
@@ -301,13 +309,15 @@ Signer identity is validated through explicit pinning:
 
 - certificate thumbprint
 - raw SPKI public key
-- SHA‑256 hash of the public key
+- SHA-256 hash of the public key
 
 CtxSignlib does not rely on OS trust stores.
 
 Deterministic File Integrity
 
-File integrity is validated using SHA‑256 hashes stored in a signed manifest.
+File integrity is validated using SHA-256 hashes stored in a signed manifest.
+
+For exact-path regex-filtered manifest entries, verification hashes filtered UTF-8 content using the same exclude semantics used during manifest creation.
 
 Path Boundary Enforcement
 
@@ -319,9 +329,9 @@ This prevents path traversal attacks such as:
 
 Policy-Based Verification
 
-Policy    Missing Files   Hash Mismatch   Unreadable
-Strict    Fail            Fail            Fail
-Partial   Allowed         Fail            Fail
+Policy    Missing Files   Hash Mismatch   Unreadable   Invalid Syntax
+Strict    Fail            Fail            Fail         Fail
+Partial   Allowed         Fail            Fail         Fail
 
 This allows secure support for:
 
@@ -332,7 +342,7 @@ This allows secure support for:
 
 Portable Verification
 
-CtxSignlib performs crypto‑only verification and does not depend on:
+CtxSignlib performs crypto-only verification and does not depend on:
 
 - platform certificate stores
 - network services
@@ -344,18 +354,31 @@ CtxSignlib performs crypto‑only verification and does not depend on:
 
 Deterministic elements:
 
-- File SHA‑256 hashing
+- File SHA-256 hashing
 - Manifest hashing
 - SPKI public key hashing
 - Thumbprint normalization
-- Fixed‑time comparisons
+- Fixed-time comparisons
 - Canonical entry sorting
 
-Non‑deterministic elements:
+Non-deterministic elements:
 
 - CMS signature bytes
 
 Although CMS signatures vary between signing operations, verification remains deterministic because content hashes and signer identity are validated.
+However, CtxSignlib supports excluding partial file contents via regex in Manifest. This feature provides an ability to stip localized and personal data
+
+--------------------------------------------------------------------------
+
+# Release Notes (v1.1.3)
+
+- Fixed manifest verification drift for files included in files[] but hashed using exact-path regex filtering from excludes[].
+- Unified thumbprint-based and public-key-based single-file signed manifest verification behavior.
+- Added shared manifest entry hash resolution logic to prevent verification drift.
+- Added InvalidSyntaxFiles to partial verification results.
+- Categorized malformed regex and non-UTF-8 regex-filtered files as syntax failures rather than ordinary mismatches.
+- Added locked-read handling for regex-filtered verification to improve TOCTOU hardening.
+- Source repository is now maintained at https://github.com/mywebext/ctxsignlib.
 
 --------------------------------------------------------------------------
 
