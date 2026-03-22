@@ -1,4 +1,5 @@
 ﻿// CtxSignlib.Manifest/ManifestVerifier.cs
+using CtxSignlib.Diagnostics;
 using System.Collections.Generic;
 
 namespace CtxSignlib.Manifest

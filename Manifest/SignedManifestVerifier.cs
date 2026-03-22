@@ -1,4 +1,5 @@
 ﻿//CtxSignlib.Manifest/SignedManifestVerifier.cs
+using CtxSignlib.Diagnostics;
 using CtxSignlib.Verify;
 using static CtxSignlib.Functions;
 
@@ -33,6 +34,9 @@ namespace CtxSignlib.Manifest
     /// </list>
     /// <para>
     /// This API returns <c>false</c> if either step fails (signature invalid/missing/pin mismatch, or any manifest file verification failure).
+    /// </para>
+    /// <para>
+    /// Input and trust-boundary validation failures are reported as <see cref="CtxException"/>.
     /// </para>
     /// </remarks>
     public static class SignedManifestVerifier
@@ -79,18 +83,7 @@ namespace CtxSignlib.Manifest
         /// and details are returned in <paramref name="failedFiles"/>.
         /// </description></item>
         /// </list>
-        /// <para>
-        /// Exceptions are reserved for invalid inputs, violated trust-boundary constraints (manifest/signature outside root), or malformed manifest structure.
-        /// </para>
         /// </remarks>
-        /// <exception cref="ArgumentException">
-        /// Thrown if <paramref name="rootDir"/>, <paramref name="manifestPath"/>, or <paramref name="pinnedPublicKeySha256"/> is null/whitespace
-        /// (or the pin normalizes to empty).
-        /// </exception>
-        /// <exception cref="DirectoryNotFoundException">Thrown if <paramref name="rootDir"/> does not exist.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if <paramref name="manifestPath"/> or the resolved signature path is outside <paramref name="rootDir"/>.
-        /// </exception>
         public static bool VerifySignedManifest(
             string rootDir,
             string manifestPath,
@@ -101,14 +94,39 @@ namespace CtxSignlib.Manifest
         {
             failedFiles = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-            if (Null(rootDir)) throw new ArgumentException("rootDir is required.", nameof(rootDir));
-            if (Null(manifestPath)) throw new ArgumentException("manifestPath is required.", nameof(manifestPath));
-            if (Null(pinnedPublicKeySha256)) throw new ArgumentException("pinnedPublicKeySha256 is required.", nameof(pinnedPublicKeySha256));
+            if (Null(rootDir))
+            {
+                throw new CtxException(
+                    message: "rootDir is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(manifestPath))
+            {
+                throw new CtxException(
+                    message: "manifestPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(pinnedPublicKeySha256))
+            {
+                throw new CtxException(
+                    message: "pinnedPublicKeySha256 is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             rootDir = Path.GetFullPath(rootDir);
 
             if (!Directory.Exists(rootDir))
-                throw new DirectoryNotFoundException(rootDir);
+            {
+                throw new CtxException(
+                    message: $"Directory not found: {rootDir}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound);
+            }
 
             // Resolve manifestPath under rootDir if relative
             manifestPath = Path.GetFullPath(
@@ -116,7 +134,12 @@ namespace CtxSignlib.Manifest
 
             // manifest must be inside rootDir
             if (!IsSubPathOf(rootDir, manifestPath))
-                throw new InvalidOperationException("manifestPath must be inside rootDir.");
+            {
+                throw new CtxException(
+                    message: "manifestPath must be inside rootDir.",
+                    target: ErrorTarget.Manifest,
+                    detail: ErrorDetail.TrustBoundaryViolation);
+            }
 
             // Resolve sigPath
             if (Null(sigPath))
@@ -127,12 +150,22 @@ namespace CtxSignlib.Manifest
 
             // sig must be inside rootDir
             if (!IsSubPathOf(rootDir, sigPath))
-                throw new InvalidOperationException("sigPath must be inside rootDir.");
+            {
+                throw new CtxException(
+                    message: "sigPath must be inside rootDir.",
+                    target: ErrorTarget.Manifest,
+                    detail: ErrorDetail.TrustBoundaryViolation);
+            }
 
             // Normalize pin deterministically (strip non-hex, uppercase)
             pinnedPublicKeySha256 = NormalizeHex(pinnedPublicKeySha256);
             if (pinnedPublicKeySha256.Length == 0)
-                throw new ArgumentException("pinnedPublicKeySha256 is required.", nameof(pinnedPublicKeySha256));
+            {
+                throw new CtxException(
+                    message: "pinnedPublicKeySha256 is not in a valid hex format.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.InvalidFormat);
+            }
 
             // 1) Verify signature (crypto-only; pins signer extracted from CMS)
             signatureResult = CMSVerifier.VerifyDetachmentByPublicKey(

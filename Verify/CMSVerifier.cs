@@ -1,5 +1,8 @@
 ﻿// CtxSignlib.Verify/CMSVerifier.cs
+using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
+using System.Security.Cryptography.X509Certificates;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Verify
@@ -129,7 +132,6 @@ namespace CtxSignlib.Verify
             var signerCert = DecodeAndCryptoVerifyAndGetSignerCert(content, sig, out var cmsResult);
             if (cmsResult != VerifyResult.Ok) return cmsResult;
 
-            // Fixed-time compare on normalized hex.
             string actual = NormalizeHex(signerCert!.Thumbprint);
             return HexBytesEquals(actual, pinnedThumbprint) ? VerifyResult.Ok : VerifyResult.WrongSigner;
         }
@@ -191,10 +193,7 @@ namespace CtxSignlib.Verify
             var signerCert = DecodeAndCryptoVerifyAndGetSignerCert(content, sig, out var cmsResult);
             if (cmsResult != VerifyResult.Ok) return cmsResult;
 
-            // PublicKeySha256() is defined (by law) as SHA-256(SPKI DER).
             string actual = PublicKeySha256(signerCert!);
-
-            // Fixed-time compare on normalized hex.
             return HexBytesEquals(actual, pinnedPublicKeySha256) ? VerifyResult.Ok : VerifyResult.WrongSigner;
         }
 
@@ -242,17 +241,12 @@ namespace CtxSignlib.Verify
 
             try
             {
-                // ParsePublicKeyBytes() accepts PEM/base64/hex and returns SPKI DER bytes.
                 byte[] spki = ParsePublicKeyBytes(rawPublicKey);
-
-                // --pubpin = SHA-256(--pin) where --pin == SPKI DER bytes.
                 string pubpin = Sha256Hex(spki);
-
                 return VerifyDetachmentByPublicKey(contentPath, sigPath, pubpin);
             }
             catch
             {
-                // Deterministic failure classification for invalid raw key inputs.
                 return VerifyResult.WrongSigner;
             }
         }
@@ -269,24 +263,47 @@ namespace CtxSignlib.Verify
         /// <remarks>
         /// This method validates only the cryptographic integrity of the signature.
         /// It does not perform certificate chain validation or identity pinning.
+        /// Failures are reported as <see cref="CtxException"/>.
         /// </remarks>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="sig"/> is null.</exception>
-        /// <exception cref="System.Security.Cryptography.CryptographicException">Thrown if CMS decoding or signature verification fails.</exception>
         public static void VerifyDetachmentOrThrow(byte[] content, byte[] sig)
         {
-            if (content == null) throw new ArgumentNullException(nameof(content));
-            if (sig == null) throw new ArgumentNullException(nameof(sig));
+            if (content == null)
+            {
+                throw new CtxException(
+                    message: "content is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
-            var cms = new SignedCms(new ContentInfo(content), detached: true);
-            cms.Decode(sig);
-            cms.CheckSignature(verifySignatureOnly: true);
+            if (sig == null)
+            {
+                throw new CtxException(
+                    message: "sig is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            try
+            {
+                var cms = new SignedCms(new ContentInfo(content), detached: true);
+                cms.Decode(sig);
+                cms.CheckSignature(verifySignatureOnly: true);
+            }
+            catch (CryptographicException ex)
+            {
+                throw new CtxException(
+                    message: "Detached CMS signature verification failed.",
+                    target: ErrorTarget.Verification,
+                    detail: ErrorDetail.BadSignature,
+                    innerException: ex);
+            }
         }
 
         // =========================
         // Internal shared core (pins signer inside the signature)
         // =========================
 
-        private static System.Security.Cryptography.X509Certificates.X509Certificate2? DecodeAndCryptoVerifyAndGetSignerCert(
+        private static X509Certificate2? DecodeAndCryptoVerifyAndGetSignerCert(
             byte[] content,
             byte[] sig,
             out VerifyResult result)
@@ -304,10 +321,8 @@ namespace CtxSignlib.Verify
                     return null;
                 }
 
-                // Crypto verify only (NO OS trust store checks).
                 cms.CheckSignature(verifySignatureOnly: true);
 
-                // Law: comparisons must use signer extracted from the CMS itself.
                 var signerCert = cms.SignerInfos[0].Certificate;
                 if (signerCert == null)
                 {

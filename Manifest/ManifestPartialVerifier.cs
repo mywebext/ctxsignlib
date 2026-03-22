@@ -1,4 +1,6 @@
 ﻿// CtxSignlib.Manifest/ManifestPartialVerifier.cs
+using CtxSignlib.Diagnostics;
+
 namespace CtxSignlib.Manifest
 {
     /// <summary>
@@ -9,6 +11,8 @@ namespace CtxSignlib.Manifest
     /// but changes file-presence semantics:
     /// missing files are reported and are non-fatal by themselves,
     /// while present files must still validate exactly.
+    /// Files that cannot be safely verified due to invalid per-file syntax
+    /// are also treated as verification failures.
     /// </remarks>
     public static class ManifestPartialVerifier
     {
@@ -26,6 +30,8 @@ namespace CtxSignlib.Manifest
         /// </returns>
         /// <remarks>
         /// Missing files are reported but do not fail partial verification by themselves.
+        /// Present unreadable files, present hash-mismatched files, and files that cannot be
+        /// safely verified due to invalid syntax all fail partial verification.
         /// Malformed manifests and trust-boundary violations still throw, matching the strict parser expectations.
         /// </remarks>
         public static bool VerifyManifestPartial(
@@ -44,11 +50,13 @@ namespace CtxSignlib.Manifest
         /// Must resolve to a location inside <paramref name="rootDir"/>.
         /// </param>
         /// <returns>
-        /// A detailed partial verification result containing passed, missing, failed, and unreadable file lists.
+        /// A detailed partial verification result containing passed, missing, failed, unreadable,
+        /// and invalid-syntax file lists.
         /// </returns>
         /// <remarks>
         /// Missing files are non-fatal in this mode.
-        /// Present unreadable files and present hash-mismatched files are fatal.
+        /// Present unreadable files, present hash-mismatched files, and files that cannot be
+        /// safely verified due to invalid syntax are fatal.
         /// Malformed manifests and invalid trust-boundary inputs still throw.
         /// The returned <see cref="ManifestPartialVerificationResult.Success"/> value is computed
         /// using partial verification semantics.

@@ -233,6 +233,28 @@ This allows higher-level systems to evaluate installation state and determine co
 
 --------------------------------------------------------------------------
 
+# Error Model
+
+CtxSignlib includes a structured custom exception model for operational and validation failures.
+
+Core components:
+
+- CtxException
+- ErrorTarget
+- ErrorDetail
+
+This model is used to distinguish categories such as:
+
+- argument validation failures
+- filesystem failures
+- manifest validation failures
+- certificate and cryptography failures
+- signing and verification failures
+
+Result-based verification APIs still use explicit result contracts where appropriate, while operational failures and invalid inputs use CtxException for more precise error handling.
+
+--------------------------------------------------------------------------
+
 # Package Identity
 
 CtxSignlib provides a deterministic **PackageId** generator.
@@ -366,11 +388,17 @@ Non-deterministic elements:
 - CMS signature bytes
 
 Although CMS signatures vary between signing operations, verification remains deterministic because content hashes and signer identity are validated.
-However, CtxSignlib supports excluding partial file contents via regex in Manifest. This feature provides an ability to stip localized and personal data
+
+CtxSignlib also supports excluding partial file contents via regex in manifest rules. This makes it possible to strip localized or personal data before hashing in narrowly defined manifest workflows.
 
 --------------------------------------------------------------------------
 
 # Release Notes (v1.1.3)
+
+- Fixed major drift between the thumbprint and pinning verification methods
+- Source repository is now maintained at https://github.com/mywebext/ctxsignlib.
+
+# Release Notes (v1.1.4)
 
 - Fixed manifest verification drift for files included in files[] but hashed using exact-path regex filtering from excludes[].
 - Unified thumbprint-based and public-key-based single-file signed manifest verification behavior.
@@ -378,7 +406,13 @@ However, CtxSignlib supports excluding partial file contents via regex in Manife
 - Added InvalidSyntaxFiles to partial verification results.
 - Categorized malformed regex and non-UTF-8 regex-filtered files as syntax failures rather than ordinary mismatches.
 - Added locked-read handling for regex-filtered verification to improve TOCTOU hardening.
+- Expanded the custom CtxException-based error model across more library surfaces.
 - Source repository is now maintained at https://github.com/mywebext/ctxsignlib.
+
+# Release Notes (v1.1.5)
+
+- Added a custom CtxException-based error model for more precise diagnostics, safer caller handling.
+- Structured both the error and return models so the ability to add language translations would be easier. 
 
 --------------------------------------------------------------------------
 

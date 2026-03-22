@@ -1,9 +1,9 @@
 ﻿// CtxSignlib.Signing/CMSWriter.cs
 using System;
-using System.IO;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Signing
@@ -44,28 +44,58 @@ namespace CtxSignlib.Signing
         /// <para>
         /// This method does not timestamp the signature and does not add signing-time attributes.
         /// </para>
+        /// <para>
+        /// Failures are reported as <see cref="CtxException"/>.
+        /// </para>
         /// </remarks>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="signingCert"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
-        /// <exception cref="CryptographicException">Thrown if CMS signature generation fails.</exception>
         public static byte[] SignDetachment(byte[] content, X509Certificate2 signingCert)
         {
-            if (content == null) throw new ArgumentNullException(nameof(content));
-            if (signingCert == null) throw new ArgumentNullException(nameof(signingCert));
-            if (!signingCert.HasPrivateKey)
-                throw new InvalidOperationException("Signing certificate does not have an accessible private key.");
-
-            var cms = new SignedCms(new ContentInfo(content), detached: true);
-
-            var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, signingCert)
+            if (content == null)
             {
-                // Portable: embed just the signer cert (no chain, no OS trust dependency).
-                IncludeOption = X509IncludeOption.EndCertOnly
-            };
+                throw new CtxException(
+                    message: "content is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
-            // Important: do not add SigningTime or any other optional attributes here.
-            cms.ComputeSignature(signer);
-            return cms.Encode();
+            if (signingCert == null)
+            {
+                throw new CtxException(
+                    message: "signingCert is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (!signingCert.HasPrivateKey)
+            {
+                throw new CtxException(
+                    message: "Signing certificate does not have an accessible private key.",
+                    target: ErrorTarget.Certificate,
+                    detail: ErrorDetail.PrivateKeyMissing);
+            }
+
+            try
+            {
+                var cms = new SignedCms(new ContentInfo(content), detached: true);
+
+                var signer = new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, signingCert)
+                {
+                    // Portable: embed just the signer cert (no chain, no OS trust dependency).
+                    IncludeOption = X509IncludeOption.EndCertOnly
+                };
+
+                // Important: do not add SigningTime or any other optional attributes here.
+                cms.ComputeSignature(signer);
+                return cms.Encode();
+            }
+            catch (CryptographicException ex)
+            {
+                throw new CtxException(
+                    message: "Failed to create detached CMS signature.",
+                    target: ErrorTarget.Signing,
+                    detail: ErrorDetail.CryptographicFailure,
+                    innerException: ex);
+            }
         }
 
         /// <summary>
@@ -80,24 +110,49 @@ namespace CtxSignlib.Signing
         /// The content file is fully read into memory before signing.
         /// The signature file is written using <see cref="Functions.WriteAllBytesAtomic(string, byte[])"/>
         /// to prevent partially-written outputs.
+        /// Failures are reported as <see cref="CtxException"/>.
         /// </remarks>
-        /// <exception cref="ArgumentException">Thrown if <paramref name="contentPath"/> or <paramref name="sigPath"/> is null/whitespace.</exception>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="signingCert"/> is null.</exception>
-        /// <exception cref="FileNotFoundException">Thrown if <paramref name="contentPath"/> does not exist.</exception>
-        /// <exception cref="InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
-        /// <exception cref="CryptographicException">Thrown if CMS signature generation fails.</exception>
-        /// <exception cref="IOException">Thrown if writing the signature file fails.</exception>
-        /// <exception cref="UnauthorizedAccessException">Thrown if access to the content or signature path is denied.</exception>
         public static void SignDetachment(string contentPath, string sigPath, X509Certificate2 signingCert)
         {
-            if (Null(contentPath)) throw new ArgumentException("contentPath is required.", nameof(contentPath));
-            if (Null(sigPath)) throw new ArgumentException("sigPath is required.", nameof(sigPath));
-            if (signingCert == null) throw new ArgumentNullException(nameof(signingCert));
+            if (Null(contentPath))
+            {
+                throw new CtxException(
+                    message: "contentPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(sigPath))
+            {
+                throw new CtxException(
+                    message: "sigPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (signingCert == null)
+            {
+                throw new CtxException(
+                    message: "signingCert is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
             if (!signingCert.HasPrivateKey)
-                throw new InvalidOperationException("Signing certificate does not have an accessible private key.");
+            {
+                throw new CtxException(
+                    message: "Signing certificate does not have an accessible private key.",
+                    target: ErrorTarget.Certificate,
+                    detail: ErrorDetail.PrivateKeyMissing);
+            }
 
             if (!File.Exists(contentPath))
-                throw new FileNotFoundException("Content file not found.", contentPath);
+            {
+                throw new CtxException(
+                    message: "Content file not found.",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileNotFound);
+            }
 
             byte[] content = ReadAllBytesSafe(contentPath);
             byte[] sig = SignDetachment(content, signingCert);

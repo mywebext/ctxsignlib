@@ -3,6 +3,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Manifest
@@ -76,6 +77,9 @@ namespace CtxSignlib.Manifest
     /// <para>
     /// Note: the manifest includes <c>createdUtc</c>, which intentionally varies between runs.
     /// </para>
+    /// <para>
+    /// Validation and operational failures are reported as <see cref="CtxException"/>.
+    /// </para>
     /// </remarks>
     public static class ManifestBuilder
     {
@@ -114,31 +118,47 @@ namespace CtxSignlib.Manifest
         /// </remarks>
         public static int BuildOrUpdate(string rootDir, string outManifestPath, string? pathToExcludesFile = null)
         {
-            if (Null(rootDir)) throw new ArgumentException("rootDir is required.", nameof(rootDir));
-            if (Null(outManifestPath)) throw new ArgumentException("outManifestPath is required.", nameof(outManifestPath));
+            if (Null(rootDir))
+            {
+                throw new CtxException(
+                    message: "rootDir is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(outManifestPath))
+            {
+                throw new CtxException(
+                    message: "outManifestPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             rootDir = Path.GetFullPath(rootDir);
 
             if (!Directory.Exists(rootDir))
-                throw new DirectoryNotFoundException(rootDir);
+            {
+                throw new CtxException(
+                    message: $"Root directory not found: {rootDir}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound);
+            }
 
-            // Resolve outManifestPath under rootDir if relative (deterministic)
             outManifestPath = Path.GetFullPath(
                 Path.IsPathRooted(outManifestPath) ? outManifestPath : Path.Combine(rootDir, outManifestPath));
 
-            // Enforce trust boundary: output manifest must be inside rootDir
             if (!IsSubPathOf(rootDir, outManifestPath))
-                throw new InvalidOperationException("outManifestPath must be inside rootDir.");
+            {
+                throw new CtxException(
+                    message: "outManifestPath must be inside rootDir.",
+                    target: ErrorTarget.Manifest,
+                    detail: ErrorDetail.TrustBoundaryViolation);
+            }
 
-            // Exclude the manifest itself and common signature name to avoid self-referential hashing.
             string outSigPath = outManifestPath + ".sig";
 
-            // Load excludes from existing out manifest (if any), then merge file-based excludes (if provided).
             var excludes = LoadAndMergeExcludes(outManifestPath, pathToExcludesFile);
 
-            // Split excludes into:
-            // - dir excludes (prefix rules)
-            // - file excludes (exact rules) w/ optional regex
             var dirExcludes = new List<string>();
             var fileExcludes = new Dictionary<string, ManifestExclude>(StringComparer.Ordinal);
 
@@ -152,7 +172,12 @@ namespace CtxSignlib.Manifest
                 if (isDir)
                 {
                     if (!Null(ex.Regex))
-                        throw new InvalidOperationException($"Directory excludes must not define regex. Entry: \"{p}\"");
+                    {
+                        throw new CtxException(
+                            message: $"Directory excludes must not define regex. Entry: \"{p}\"",
+                            target: ErrorTarget.Manifest,
+                            detail: ErrorDetail.InvalidManifest);
+                    }
 
                     dirExcludes.Add(p);
                     continue;
@@ -160,7 +185,6 @@ namespace CtxSignlib.Manifest
 
                 if (fileExcludes.TryGetValue(p, out var existing))
                 {
-                    // Identical duplicates collapse; conflicting duplicates throw.
                     string? a = existing.Regex;
                     string? b = ex.Regex;
 
@@ -173,7 +197,10 @@ namespace CtxSignlib.Manifest
                     if (!aNull && !bNull && string.Equals(a, b, StringComparison.Ordinal))
                         continue;
 
-                    throw new InvalidOperationException($"Conflicting exclude entries for path \"{p}\".");
+                    throw new CtxException(
+                        message: $"Conflicting exclude entries for path \"{p}\".",
+                        target: ErrorTarget.Manifest,
+                        detail: ErrorDetail.ConflictingConfiguration);
                 }
 
                 fileExcludes[p] = new ManifestExclude { Path = p, Regex = ex.Regex };
@@ -182,44 +209,36 @@ namespace CtxSignlib.Manifest
             dirExcludes.Sort(StringComparer.Ordinal);
 
             var files = new List<(string relPath, string sha256, long size)>();
-
             var pathCompare = IsWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
             foreach (var file in Directory.EnumerateFiles(rootDir, "*", SearchOption.AllDirectories))
             {
-                // Exclude manifest outputs by FULL PATH (not name)
                 if (string.Equals(file, outManifestPath, pathCompare) ||
                     string.Equals(file, outSigPath, pathCompare))
                     continue;
 
                 string name = Path.GetFileName(file);
 
-                // Skip ADS / transient files (best effort)
                 if (name.EndsWith(":Zone.Identifier", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 string rel = Path.GetRelativePath(rootDir, file);
                 rel = NormalizeManifestPath(rel);
 
-                // Directory excludes win
                 if (IsExcludedByDirectory(rel, dirExcludes))
                     continue;
 
-                // Exact file exclude rules
                 if (fileExcludes.TryGetValue(rel, out var exRule))
                 {
-                    // path-only => fully excluded
                     if (Null(exRule.Regex))
                         continue;
 
-                    // path+regex => include but hash filtered UTF-8 content
                     var fi = new FileInfo(file);
                     string shaFiltered = HashFilteredUtf8(file, exRule.Regex!);
                     files.Add((rel, shaFiltered, fi.Length));
                     continue;
                 }
 
-                // Normal hashing
                 {
                     var fi = new FileInfo(file);
                     string sha = FileSha256(file);
@@ -229,8 +248,6 @@ namespace CtxSignlib.Manifest
 
             files.Sort((a, b) => string.CompareOrdinal(a.relPath, b.relPath));
 
-            // Deterministic excludes ordering in output:
-            // - dirs first, then files sorted by path
             var orderedExcludes = OrderExcludesForWrite(dirExcludes, fileExcludes);
 
             byte[] json = WriteManifestJson(orderedExcludes, files);
@@ -243,7 +260,6 @@ namespace CtxSignlib.Manifest
         {
             var result = new List<ManifestExclude>();
 
-            // 1) Reuse excludes from existing out manifest
             if (File.Exists(outManifestPath))
             {
                 try
@@ -272,21 +288,67 @@ namespace CtxSignlib.Manifest
                         }
                     }
                 }
-                catch
+                catch (CtxException ex)
                 {
-                    throw new InvalidOperationException("Existing manifest could not be parsed to reuse excludes.");
+                    throw new CtxException(
+                        message: "Existing manifest could not be parsed to reuse excludes.",
+                        target: ErrorTarget.Manifest,
+                        detail: ErrorDetail.InvalidManifest,
+                        innerException: ex);
+                }
+                catch (JsonException ex)
+                {
+                    throw new CtxException(
+                        message: "Existing manifest could not be parsed to reuse excludes.",
+                        target: ErrorTarget.Manifest,
+                        detail: ErrorDetail.InvalidManifest,
+                        innerException: ex);
                 }
             }
 
-            // 2) Merge excludes from file (path-only entries)
             if (!Null(pathToExcludesFile))
             {
                 string p = Path.GetFullPath(pathToExcludesFile!);
 
                 if (!File.Exists(p))
-                    throw new FileNotFoundException("Excludes file not found.", p);
+                {
+                    throw new CtxException(
+                        message: $"Excludes file not found: {p}",
+                        target: ErrorTarget.FileSystem,
+                        detail: ErrorDetail.FileNotFound);
+                }
 
-                foreach (var line in File.ReadAllLines(p))
+                string[] lines;
+                try
+                {
+                    lines = File.ReadAllLines(p);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    throw new CtxException(
+                        message: $"Access denied while reading excludes file: {p}",
+                        target: ErrorTarget.FileSystem,
+                        detail: ErrorDetail.AccessDenied,
+                        innerException: ex);
+                }
+                catch (DirectoryNotFoundException ex)
+                {
+                    throw new CtxException(
+                        message: $"Directory not found while reading excludes file: {p}",
+                        target: ErrorTarget.FileSystem,
+                        detail: ErrorDetail.DirectoryNotFound,
+                        innerException: ex);
+                }
+                catch (IOException ex)
+                {
+                    throw new CtxException(
+                        message: $"Failed to read excludes file: {p}",
+                        target: ErrorTarget.FileSystem,
+                        detail: ErrorDetail.FileUnreadable,
+                        innerException: ex);
+                }
+
+                foreach (var line in lines)
                 {
                     string s = (line ?? "").Trim();
                     if (s.Length == 0) continue;
@@ -325,16 +387,31 @@ namespace CtxSignlib.Manifest
                 text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
                     .GetString(raw);
             }
-            catch (DecoderFallbackException)
+            catch (DecoderFallbackException ex)
             {
-                throw new InvalidOperationException($"Regex filtering requires UTF-8 text. File is not valid UTF-8: {filePath}");
+                throw new CtxException(
+                    message: $"Regex filtering requires UTF-8 text. File is not valid UTF-8: {filePath}",
+                    target: ErrorTarget.Manifest,
+                    detail: ErrorDetail.InvalidFormat,
+                    innerException: ex);
             }
 
-            var rx = new Regex(regexPattern, RegexOptions.CultureInvariant | RegexOptions.Multiline);
-            string filtered = rx.Replace(text, "");
+            try
+            {
+                var rx = new Regex(regexPattern, RegexOptions.CultureInvariant | RegexOptions.Multiline);
+                string filtered = rx.Replace(text, "");
 
-            byte[] filteredBytes = Encoding.UTF8.GetBytes(filtered);
-            return Sha256Hex(filteredBytes); // uppercase hex
+                byte[] filteredBytes = Encoding.UTF8.GetBytes(filtered);
+                return Sha256Hex(filteredBytes);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new CtxException(
+                    message: $"Invalid regex pattern for manifest filtering: {regexPattern}",
+                    target: ErrorTarget.Manifest,
+                    detail: ErrorDetail.InvalidRegex,
+                    innerException: ex);
+            }
         }
 
         private static List<ManifestExclude> OrderExcludesForWrite(List<string> dirExcludes, Dictionary<string, ManifestExclude> fileExcludes)

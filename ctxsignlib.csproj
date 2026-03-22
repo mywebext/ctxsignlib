@@ -8,12 +8,13 @@
     <IsPackable>true</IsPackable>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageId>ctxsignlib</PackageId>
-    <Version>1.1.4</Version>
-    <PackageVersion>1.1.4</PackageVersion>
-    <AssemblyVersion>1.1.4.0</AssemblyVersion>
-    <FileVersion>1.1.4.0</FileVersion>
-    <InformationalVersion>1.1.4</InformationalVersion>
-
+    <Version>1.1.5</Version>
+    <PackageVersion>1.1.5</PackageVersion>
+    <AssemblyVersion>1.1.5.0</AssemblyVersion>
+    <FileVersion>1.1.5.0</FileVersion>
+    <InformationalVersion>1.1.5</InformationalVersion>
+    <PackageReleaseNotes>Added a custom CtxException-based error model for more precise diagnostics, safer caller handling and to support more detailed language translations</PackageReleaseNotes>
+    
     <Authors>Kenneth Poston</Authors>
     <Company>Mywebext Services LLC</Company>
     <Copyright>Copyright © 2026 Kenneth Poston, Mywebext Services LLC. All rights reserved.</Copyright>
@@ -49,8 +50,6 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageIcon>icon.png</PackageIcon>
     <ApplicationIcon>ctxsign48.ico</ApplicationIcon>
-
-    <PackageReleaseNotes>Improved package metadata, repository/source integration, and generated API documentation path handling.</PackageReleaseNotes>
 
   </PropertyGroup>
 

@@ -1,7 +1,7 @@
-﻿// CtxSignlib.Manifest/ManifestPartialVerificationResult.cs
+﻿// CtxSignlib.Diagnostics/ManifestPartialVerificationResult.cs
 using System.Collections.Generic;
 
-namespace CtxSignlib.Manifest
+namespace CtxSignlib.Diagnostics
 {
     /// <summary>
     /// Represents the categorized result of a manifest verification operation.

@@ -1,4 +1,6 @@
 ﻿// CtxSignlib.Manifest/DetailedManifestFileVerification.cs
+using CtxSignlib.Diagnostics;
+
 namespace CtxSignlib.Manifest
 {
     /// <summary>

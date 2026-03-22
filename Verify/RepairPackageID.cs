@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using CtxSignlib.Manifest;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Verify
@@ -53,15 +53,19 @@ namespace CtxSignlib.Verify
         /// <para>
         /// <see cref="ManifestPartialVerificationResult.PassedFiles"/> are intentionally excluded.
         /// </para>
+        /// <para>
+        /// Input and metadata validation failures are reported as <see cref="CtxException"/>.
+        /// </para>
         /// </remarks>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if any repair-relevant path does not have an expected SHA-256 entry in the result metadata.
-        /// </exception>
         public static string Generate(ManifestPartialVerificationResult result)
         {
             if (result == null)
-                throw new ArgumentNullException(nameof(result));
+            {
+                throw new CtxException(
+                    message: "result is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             var entries = new List<string>();
 
@@ -77,14 +81,18 @@ namespace CtxSignlib.Verify
         /// </summary>
         /// <param name="result">A manifest verification result containing expected-hash metadata.</param>
         /// <returns>Uppercase hexadecimal SHA-256 of the canonical missing-file entry list.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if any missing path does not have an expected SHA-256 entry in the result metadata.
-        /// </exception>
+        /// <remarks>
+        /// Input and metadata validation failures are reported as <see cref="CtxException"/>.
+        /// </remarks>
         public static string GenerateMissing(ManifestPartialVerificationResult result)
         {
             if (result == null)
-                throw new ArgumentNullException(nameof(result));
+            {
+                throw new CtxException(
+                    message: "result is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             var entries = new List<string>();
             AddEntries(entries, result, result.MissingFiles);
@@ -96,14 +104,18 @@ namespace CtxSignlib.Verify
         /// </summary>
         /// <param name="result">A manifest verification result containing expected-hash metadata.</param>
         /// <returns>Uppercase hexadecimal SHA-256 of the canonical failed-file entry list.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if any failed path does not have an expected SHA-256 entry in the result metadata.
-        /// </exception>
+        /// <remarks>
+        /// Input and metadata validation failures are reported as <see cref="CtxException"/>.
+        /// </remarks>
         public static string GenerateFailed(ManifestPartialVerificationResult result)
         {
             if (result == null)
-                throw new ArgumentNullException(nameof(result));
+            {
+                throw new CtxException(
+                    message: "result is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             var entries = new List<string>();
             AddEntries(entries, result, result.FailedFiles);
@@ -115,14 +127,18 @@ namespace CtxSignlib.Verify
         /// </summary>
         /// <param name="result">A manifest verification result containing expected-hash metadata.</param>
         /// <returns>Uppercase hexadecimal SHA-256 of the canonical unreadable-file entry list.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-        /// <exception cref="InvalidOperationException">
-        /// Thrown if any unreadable path does not have an expected SHA-256 entry in the result metadata.
-        /// </exception>
+        /// <remarks>
+        /// Input and metadata validation failures are reported as <see cref="CtxException"/>.
+        /// </remarks>
         public static string GenerateUnreadable(ManifestPartialVerificationResult result)
         {
             if (result == null)
-                throw new ArgumentNullException(nameof(result));
+            {
+                throw new CtxException(
+                    message: "result is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             var entries = new List<string>();
             AddEntries(entries, result, result.UnreadableFiles);
@@ -135,6 +151,9 @@ namespace CtxSignlib.Verify
         /// <param name="relativeFilePath">Relative file path.</param>
         /// <param name="expectedSha256">Expected SHA-256 (hex) for the file.</param>
         /// <returns>Uppercase hexadecimal SHA-256 of the canonical single-entry payload.</returns>
+        /// <remarks>
+        /// Input validation failures are reported as <see cref="CtxException"/>.
+        /// </remarks>
         public static string Generate(string relativeFilePath, string expectedSha256)
         {
             string entry = CanonicalEntry(relativeFilePath, expectedSha256);
@@ -148,11 +167,18 @@ namespace CtxSignlib.Verify
         /// Sequence of tuples in the form (path, expectedSha256).
         /// </param>
         /// <returns>Uppercase hexadecimal SHA-256 of the canonical entry payload.</returns>
-        /// <exception cref="ArgumentNullException">Thrown if <paramref name="entries"/> is null.</exception>
+        /// <remarks>
+        /// Input validation failures are reported as <see cref="CtxException"/>.
+        /// </remarks>
         public static string Generate(IEnumerable<(string path, string expectedSha256)> entries)
         {
             if (entries == null)
-                throw new ArgumentNullException(nameof(entries));
+            {
+                throw new CtxException(
+                    message: "entries is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             var canonical = new List<string>();
 
@@ -170,7 +196,12 @@ namespace CtxSignlib.Verify
             foreach (var path in paths)
             {
                 if (!result.ExpectedHashByPath.TryGetValue(path, out var expected) || Null(expected))
-                    throw new InvalidOperationException($"Expected hash metadata is missing for path \"{path}\".");
+                {
+                    throw new CtxException(
+                        message: $"Expected hash metadata is missing for path \"{path}\".",
+                        target: ErrorTarget.Manifest,
+                        detail: ErrorDetail.InvalidManifest);
+                }
 
                 target.Add(CanonicalEntry(path, expected));
             }
@@ -179,19 +210,39 @@ namespace CtxSignlib.Verify
         private static string CanonicalEntry(string relativeFilePath, string expectedSha256)
         {
             if (Null(relativeFilePath))
-                throw new ArgumentException("relativeFilePath is required.", nameof(relativeFilePath));
+            {
+                throw new CtxException(
+                    message: "relativeFilePath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             if (Null(expectedSha256))
-                throw new ArgumentException("expectedSha256 is required.", nameof(expectedSha256));
+            {
+                throw new CtxException(
+                    message: "expectedSha256 is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             string path = NormalizeManifestPath(relativeFilePath);
             string hash = NormalizeHex(expectedSha256);
 
             if (Null(path))
-                throw new ArgumentException("relativeFilePath is required.", nameof(relativeFilePath));
+            {
+                throw new CtxException(
+                    message: "relativeFilePath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             if (hash.Length == 0)
-                throw new ArgumentException("expectedSha256 is required.", nameof(expectedSha256));
+            {
+                throw new CtxException(
+                    message: "expectedSha256 is not in a valid hex format.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.InvalidFormat);
+            }
 
             return path + "|" + hash;
         }

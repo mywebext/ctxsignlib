@@ -17,97 +17,487 @@
             <summary>
             Creates an in-memory self-signed RSA X.509 certificate suitable for code-signing scenarios.
             </summary>
-            <param name="subjectName">
-            Common Name (CN) portion of the subject. This value is inserted as <c>CN={subjectName}</c>.
-            </param>
-            <param name="yearsValid">Number of years the certificate is valid from its creation time. Must be greater than zero.</param>
-            <param name="rsaBits">
-            RSA key size in bits. Must be at least 2048. Recommended values are 2048, 3072, or 4096.
-            </param>
-            <returns>
-            A new <see cref="T:System.Security.Cryptography.X509Certificates.X509Certificate2"/> instance containing a private key.
-            The returned certificate is not installed in any OS store.
-            </returns>
-            <remarks>
-            The generated certificate includes:
-            <list type="bullet">
-            <item><description>Basic Constraints: not a CA</description></item>
-            <item><description>Key Usage: Digital Signature (critical)</description></item>
-            <item><description>Enhanced Key Usage: Code Signing (OID 1.3.6.1.5.5.7.3.3)</description></item>
-            </list>
-            Validity starts slightly in the past (UTC minus 5 minutes) to reduce clock-skew issues.
-            <para/>
-            The certificate is exported and re-imported as PFX to ensure the returned instance carries a usable private key.
-            The re-import uses <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.Exportable"/> and <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet"/>
-            to keep key material from being persisted to disk where supported.
-            </remarks>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="subjectName"/> is null/whitespace, if <paramref name="yearsValid"/> is not greater than zero,
-            or if <paramref name="rsaBits"/> is less than 2048.
-            </exception>
         </member>
         <member name="M:CtxSignlib.Certificates.CertHelpers.ExportPfx(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String)">
             <summary>
             Exports a certificate (including its private key, if present) as a PFX/PKCS#12 byte array.
             </summary>
-            <param name="cert">The certificate to export.</param>
-            <param name="password">
-            Optional password used to protect the exported PFX payload. May be null to export without a password.
-            </param>
-            <returns>Binary PFX (PKCS#12) content.</returns>
-            <remarks>
-            This is an explicit export action. Callers are responsible for handling the returned bytes securely
-            (for example, avoiding logging and ensuring appropriate file permissions if written to disk).
-            </remarks>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="cert"/> is null.</exception>
-            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if export fails.</exception>
         </member>
         <member name="M:CtxSignlib.Certificates.CertHelpers.WritePfxFile(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String,System.String)">
             <summary>
             Writes a certificate as a PFX/PKCS#12 file using an atomic write strategy.
             </summary>
-            <param name="cert">The certificate to export and write.</param>
-            <param name="path">Destination file path for the PFX output.</param>
-            <param name="password">
-            Optional password used to protect the exported PFX payload. May be null to write an unprotected PFX.
-            </param>
-            <remarks>
-            This method exports the certificate via <see cref="M:CtxSignlib.Certificates.CertHelpers.ExportPfx(System.Security.Cryptography.X509Certificates.X509Certificate2,System.String)"/> and then writes
-            the result using <see cref="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])"/> to avoid partially-written files.
-            Callers are responsible for selecting a secure output location and applying appropriate access controls.
-            </remarks>
         </member>
         <member name="M:CtxSignlib.Certificates.CertHelpers.LoadPfxFile(System.String,System.String)">
             <summary>
             Loads a PFX/PKCS#12 file using cross-platform-friendly key storage flags intended for signing workflows.
             </summary>
-            <param name="path">Path to the PFX file.</param>
-            <param name="password">Password protecting the PFX file, or null if the PFX is unprotected.</param>
-            <returns>A loaded <see cref="T:System.Security.Cryptography.X509Certificates.X509Certificate2"/> instance.</returns>
-            <remarks>
-            Uses <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.Exportable"/> to allow re-export/signing after load and
-            <see cref="F:System.Security.Cryptography.X509Certificates.X509KeyStorageFlags.EphemeralKeySet"/> to avoid persisting private key material to disk where supported.
-            </remarks>
         </member>
         <member name="M:CtxSignlib.Certificates.CertHelpers.InstallToCurrentUserStore(System.Security.Cryptography.X509Certificates.X509Certificate2)">
             <summary>
             Installs a certificate into the current user's personal ("My") certificate store.
             </summary>
-            <param name="cert">The certificate to install.</param>
-            <remarks>
-            This is an optional helper and is intentionally Windows-only because store semantics vary by platform.
-            Installing certificates modifies user/system state and should be treated as an explicit action by the caller.
-            </remarks>
         </member>
         <member name="M:CtxSignlib.Certificates.CertHelpers.RemoveFromCurrentUserStore(System.String)">
             <summary>
             Removes certificates from the current user's personal ("My") certificate store that match a given thumbprint.
             </summary>
-            <param name="thumbprint">Certificate thumbprint. Non-hex characters are ignored during normalization.</param>
+        </member>
+        <member name="T:CtxSignlib.Diagnostics.CtxException">
+            <summary>
+            Represents a CtxSignlib-specific exception that carries stable diagnostic metadata
+            for tooling, logging, and host-level error translation.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.CtxException.Target">
+            <summary>
+            Gets the diagnostic target associated with the exception.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.CtxException.Detail">
+            <summary>
+            Gets the specific diagnostic detail associated with the exception.
+            </summary>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with a default diagnostic classification.
+            </summary>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor(System.String)">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with the specified message and a default diagnostic classification.
+            </summary>
+            <param name="message">The exception message.</param>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor(CtxSignlib.Diagnostics.ErrorTarget,CtxSignlib.Diagnostics.ErrorDetail)">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with the specified diagnostic classification.
+            </summary>
+            <param name="target">The diagnostic target associated with the exception.</param>
+            <param name="detail">The specific diagnostic detail associated with the exception.</param>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor(CtxSignlib.Diagnostics.ErrorTarget,CtxSignlib.Diagnostics.ErrorDetail,System.Exception)">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with the specified diagnostic classification and inner exception.
+            </summary>
+            <param name="target">The diagnostic target associated with the exception.</param>
+            <param name="detail">The specific diagnostic detail associated with the exception.</param>
+            <param name="innerException">The exception that caused the current exception.</param>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor(System.String,CtxSignlib.Diagnostics.ErrorTarget,CtxSignlib.Diagnostics.ErrorDetail)">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with the specified message and diagnostic classification.
+            </summary>
+            <param name="message">The exception message.</param>
+            <param name="target">The diagnostic target associated with the exception.</param>
+            <param name="detail">The specific diagnostic detail associated with the exception.</param>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.#ctor(System.String,CtxSignlib.Diagnostics.ErrorTarget,CtxSignlib.Diagnostics.ErrorDetail,System.Exception)">
+            <summary>
+            Initializes a new instance of the <see cref="T:CtxSignlib.Diagnostics.CtxException"/> class
+            with the specified message, diagnostic classification, and inner exception.
+            </summary>
+            <param name="message">The exception message.</param>
+            <param name="target">The diagnostic target associated with the exception.</param>
+            <param name="detail">The specific diagnostic detail associated with the exception.</param>
+            <param name="innerException">The exception that caused the current exception.</param>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.ToString">
+            <summary>
+            Returns a string representation of the current exception, including diagnostic metadata.
+            </summary>
+            <returns>A string representation of the current exception.</returns>
+        </member>
+        <member name="M:CtxSignlib.Diagnostics.CtxException.BuildDefaultMessage(CtxSignlib.Diagnostics.ErrorTarget,CtxSignlib.Diagnostics.ErrorDetail)">
+            <summary>
+            Creates a fallback message when no explicit message is supplied.
+            </summary>
+            <param name="target">The diagnostic target associated with the exception.</param>
+            <param name="detail">The specific diagnostic detail associated with the exception.</param>
+            <returns>A simple default exception message.</returns>
+        </member>
+        <member name="T:CtxSignlib.Diagnostics.ErrorDetail">
+            <summary>
+            Identifies the specific diagnostic detail associated with a library outcome or failure.
+            </summary>
             <remarks>
-            This is an optional helper and is intentionally Windows-only.
-            The input thumbprint is normalized via <see cref="M:CtxSignlib.Functions.NormalizeHex(System.String)"/> (removes separators and uppercases).
-            If the normalized thumbprint is empty, this method returns without changes.
+            <para>
+            <see cref="T:CtxSignlib.Diagnostics.ErrorDetail"/> provides a stable, machine-readable reason that callers can use
+            alongside <see cref="T:CtxSignlib.Diagnostics.ErrorTarget"/> and higher-level result values.
+            </para>
+            <para>
+            Host applications may translate these values into return codes, help topics,
+            remediation guidance, logs, or localized messages.
+            </para>
+            </remarks>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.None">
+            <summary>
+            No diagnostic detail is associated with the current outcome.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.Ok">
+            <summary>
+            The operation completed successfully.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.Generic">
+            <summary>
+            A general or unspecified diagnostic condition occurred.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidArguments">
+            <summary>
+            The supplied arguments, options, or parameters were invalid, incomplete, or inconsistent.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.MissingInput">
+            <summary>
+            A required value, file, path, or input was not provided.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.FileNotFound">
+            <summary>
+            A required file or path was not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.DirectoryNotFound">
+            <summary>
+            A required directory was not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.FileUnreadable">
+            <summary>
+            A file or path could not be read.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.AccessDenied">
+            <summary>
+            Access to a required file, path, or resource was denied.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidFormat">
+            <summary>
+            Input data was present but not in a valid or expected format.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.UnsupportedFormat">
+            <summary>
+            The requested format, algorithm, or input type is not supported.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.PlatformNotSupported">
+            <summary>
+            The current platform does not support the requested operation.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidRegex">
+            <summary>
+            A regular expression or pattern value was invalid.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidOperation">
+            <summary>
+            The operation failed because the current state, configuration, or object usage was invalid.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.OperationFailed">
+            <summary>
+            The operation failed for a reason not covered by a more specific diagnostic detail.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.ResourceMissing">
+            <summary>
+            A required embedded or internal resource was not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.MissingMetadata">
+            <summary>
+            Required metadata was missing from an otherwise valid operation or result.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.MissingRequiredData">
+            <summary>
+            Required structured data was missing from the input or payload.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.ConflictingConfiguration">
+            <summary>
+            A conflict was detected in the supplied configuration, input, or excludes.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.SignatureMissing">
+            <summary>
+            A required detached signature was not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.BadSignature">
+            <summary>
+            Signature verification failed because the signature content was invalid.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.NoSigner">
+            <summary>
+            No signer certificate was present in the signature material.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.WrongSigner">
+            <summary>
+            The signer did not match the expected identity material, such as a thumbprint, pin, or public-key pin.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.PinMissing">
+            <summary>
+            Required pin material was not provided.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidPin">
+            <summary>
+            Provided pin material was invalid or could not be parsed.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.ManifestMissing">
+            <summary>
+            A manifest file was not found.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidManifest">
+            <summary>
+            Manifest content was invalid, malformed, or could not be parsed.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.FileMissing">
+            <summary>
+            A file required by the manifest was missing.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.FileOutsideRoot">
+            <summary>
+            A file referenced by the manifest resolved outside the allowed root.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.FileNotInManifest">
+            <summary>
+            A file was encountered that is not present in the manifest.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.HashMismatch">
+            <summary>
+            File content did not match the expected hash value.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.TrustBoundaryViolation">
+            <summary>
+            A path or resource violated the library trust boundary rules.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.CertificateLoadFailed">
+            <summary>
+            Certificate material could not be loaded.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidCertificate">
+            <summary>
+            Certificate material was invalid, malformed, or unusable.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.PrivateKeyMissing">
+            <summary>
+            Required private key material was missing or inaccessible.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.AuthenticationFailed">
+            <summary>
+            Authentication or signer identity validation failed.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.CryptographicFailure">
+            <summary>
+            A cryptographic operation failed.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.Timeout">
+            <summary>
+            A timeout occurred while waiting for a required operation or resource.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorDetail.InvalidTime">
+            <summary>
+            A time-based validation condition failed, such as a missing, invalid, expired, or out-of-range time value.
+            </summary>
+        </member>
+        <member name="T:CtxSignlib.Diagnostics.ErrorTarget">
+            <summary>
+            Identifies the diagnostic target associated with a library operation, input category, or failure domain.
+            </summary>
+            <remarks>
+            <para>
+            <see cref="T:CtxSignlib.Diagnostics.ErrorTarget"/> provides a stable, machine-readable classification that callers can use
+            to determine the functional area associated with an outcome, error, or diagnostic condition.
+            </para>
+            <para>
+            Host applications may translate these values into user-facing help, remediation guidance,
+            logging categories, exit codes, or other presentation-specific behavior.
+            </para>
+            </remarks>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.None">
+            <summary>
+            No diagnostic target is associated with the current outcome.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.General">
+            <summary>
+            Indicates a general or uncategorized diagnostic condition.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Operation">
+            <summary>
+            Indicates a diagnostic condition related to the requested operation or feature entry point.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Arguments">
+            <summary>
+            Indicates a diagnostic condition related to arguments, options, or parameter input.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.FileSystem">
+            <summary>
+            Indicates a diagnostic condition related to files, paths, directories, or resource access.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Pin">
+            <summary>
+            Indicates a diagnostic condition related to public key pins or pin material.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Certificate">
+            <summary>
+            Indicates a diagnostic condition related to certificates or certificate material.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Manifest">
+            <summary>
+            Indicates a diagnostic condition related to manifest creation, parsing, validation, or trust-boundary enforcement.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Signing">
+            <summary>
+            Indicates a diagnostic condition related to signing operations.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Verification">
+            <summary>
+            Indicates a diagnostic condition related to verification operations.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Authentication">
+            <summary>
+            Indicates a diagnostic condition related to authentication, signer identity, or trust validation.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Cryptography">
+            <summary>
+            Indicates a diagnostic condition related to cryptographic operations or cryptographic material.
+            </summary>
+        </member>
+        <member name="F:CtxSignlib.Diagnostics.ErrorTarget.Time">
+            <summary>
+            Indicates a diagnostic condition related to time-based validation or timing constraints.
+            </summary>
+        </member>
+        <member name="T:CtxSignlib.Diagnostics.ManifestPartialVerificationResult">
+            <summary>
+            Represents the categorized result of a manifest verification operation.
+            </summary>
+            <remarks>
+            This object records the observed state of files listed in a manifest.
+            The verification engine populates the file lists and wrappers determine
+            the policy outcome (strict vs partial).
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.PassedFiles">
+            <summary>
+            Gets the list of files that were present and matched the expected hash.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.MissingFiles">
+            <summary>
+            Gets the list of files that were listed in the manifest but were not present.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.FailedFiles">
+            <summary>
+            Gets the list of files that were present but whose hash did not match the manifest.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.UnreadableFiles">
+            <summary>
+            Gets the list of files that existed but could not be read.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.InvalidSyntaxFiles">
+            <summary>
+            Gets the list of files whose verification could not be completed because
+            the syntax of a rule or instruction associated with that file was invalid.
+            </summary>
+            <remarks>
+            Examples include malformed regex patterns or other malformed per-file
+            verification syntax that prevents a safe hash evaluation.
+            These files are not considered matched or mismatched; they are unverifiable.
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.Success">
+            <summary>
+            Gets or sets the overall success state determined by the calling verification mode.
+            </summary>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.ManifestAuthenticated">
+            <summary>
+            Gets or sets whether the manifest signature authentication step succeeded.
+            </summary>
+            <remarks>
+            For unsigned manifest verification this will remain <c>false</c>.
+            Signed-manifest verification paths set this to <c>true</c> after
+            successful CMS signature validation.
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.IsStrictlyValid">
+            <summary>
+            Indicates whether the result satisfies strict verification semantics.
+            </summary>
+            <remarks>
+            Strict mode requires:
+            - no missing files
+            - no failed files
+            - no unreadable files
+            - no invalid syntax files
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.IsPartiallyValid">
+            <summary>
+            Indicates whether the result satisfies partial verification semantics.
+            </summary>
+            <remarks>
+            Partial mode allows missing files but still requires:
+            - no failed files
+            - no unreadable files
+            - no invalid syntax files
+            </remarks>
+        </member>
+        <member name="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.ExpectedHashByPath">
+            <summary>
+            Maps manifest-relative file paths to their expected SHA-256 value.
+            </summary>
+            <remarks>
+            This is used internally so legacy APIs can rebuild the original
+            failure dictionary structure grouped by expected hash.
             </remarks>
         </member>
         <member name="T:CtxSignlib.Functions">
@@ -275,9 +665,8 @@
             <returns>Uppercase hexadecimal SHA-256 digest.</returns>
             <remarks>
             This method reads the entire file stream to compute the digest.
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/> using file-system or cryptography error categories.
             </remarks>
-            <exception cref="T:System.IO.IOException">Thrown if the file cannot be read.</exception>
-            <exception cref="T:System.UnauthorizedAccessException">Thrown if access is denied.</exception>
         </member>
         <member name="M:CtxSignlib.Functions.Sha256Hex(System.IO.Stream,System.Boolean)">
             <summary>
@@ -305,6 +694,7 @@
             <remarks>
             On Windows, <see cref="F:System.IO.FileShare.Read"/> prevents other processes from opening the file for write or delete
             while this stream is open (subject to privileges/OS policy).
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Functions.Sha256Hex(System.Byte[])">
@@ -358,7 +748,7 @@
             <returns><c>true</c> if the decoded byte sequences are identical; otherwise <c>false</c>.</returns>
             <remarks>
             Input normalization removes non-hex characters and uppercases letters before decoding.
-            This method will throw if either input decodes to an invalid hex length (odd number of hex digits) or contains invalid characters after normalization.
+            Invalid hex input is reported by the underlying decode helpers as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Functions.GetHexValue(System.Char)">
@@ -374,7 +764,7 @@
             </returns>
             <remarks>
             <para>
-            This method performs strict validation and throws if the character is not a valid
+            This method performs strict validation and throws <see cref="T:CtxSignlib.Diagnostics.CtxException"/> if the character is not a valid
             uppercase hexadecimal digit.
             </para>
             <para>
@@ -382,9 +772,6 @@
             or <see cref="M:CtxSignlib.Functions.DecodeHex(System.String)"/>, which handle normalization and validation.
             </para>
             </remarks>
-            <exception cref="T:System.FormatException">
-            Thrown if <paramref name="c"/> is not a valid hexadecimal character.
-            </exception>
         </member>
         <member name="M:CtxSignlib.Functions.TryDecodeHex(System.String,System.Byte[]@)">
             <summary>
@@ -404,11 +791,9 @@
             </summary>
             <param name="hex">The hexadecimal string to decode.</param>
             <returns>The decoded bytes.</returns>
-            <exception cref="T:System.FormatException">
-            Thrown if the normalized hex string has an odd length or contains invalid characters.
-            </exception>
             <remarks>
             Normalization strips all non-hex characters and uppercases letters. An empty input results in an empty byte array.
+            Invalid hex input is reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Functions.EncodeHex(System.String)">
@@ -605,6 +990,7 @@
             <returns>The file contents.</returns>
             <remarks>
             This is a thin wrapper over <see cref="M:System.IO.File.ReadAllBytes(System.String)"/> to keep call sites uniform.
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])">
@@ -617,9 +1003,8 @@
             Writes to <c>{path}.tmp</c> first, then replaces/moves into place.
             If the destination exists, <see cref="M:System.IO.File.Replace(System.String,System.String,System.String)"/> is used; otherwise <see cref="M:System.IO.File.Move(System.String,System.String)"/>.
             The destination directory is created if needed.
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
-            <exception cref="T:System.IO.IOException">Thrown for I/O failures (including replace/move errors).</exception>
-            <exception cref="T:System.UnauthorizedAccessException">Thrown if access is denied.</exception>
         </member>
         <member name="P:CtxSignlib.Functions.OSName">
             <summary>
@@ -701,7 +1086,7 @@
              <remarks>
              This method applies strict verification semantics over the shared categorized manifest result model.
             
-             The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+             The returned <see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.Success"/> value is computed
              using strict verification semantics.
             
              Excluded files remain excluded exactly as they are in the existing manifest verification model.
@@ -776,6 +1161,9 @@
             <para>
             Note: the manifest includes <c>createdUtc</c>, which intentionally varies between runs.
             </para>
+            <para>
+            Validation and operational failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </para>
             </remarks>
         </member>
         <member name="M:CtxSignlib.Manifest.ManifestBuilder.BuildOrUpdate(System.String,System.String,System.String)">
@@ -813,94 +1201,6 @@
             </para>
             </remarks>
         </member>
-        <member name="T:CtxSignlib.Manifest.ManifestPartialVerificationResult">
-            <summary>
-            Represents the categorized result of a manifest verification operation.
-            </summary>
-            <remarks>
-            This object records the observed state of files listed in a manifest.
-            The verification engine populates the file lists and wrappers determine
-            the policy outcome (strict vs partial).
-            </remarks>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.PassedFiles">
-            <summary>
-            Gets the list of files that were present and matched the expected hash.
-            </summary>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.MissingFiles">
-            <summary>
-            Gets the list of files that were listed in the manifest but were not present.
-            </summary>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.FailedFiles">
-            <summary>
-            Gets the list of files that were present but whose hash did not match the manifest.
-            </summary>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.UnreadableFiles">
-            <summary>
-            Gets the list of files that existed but could not be read.
-            </summary>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.InvalidSyntaxFiles">
-            <summary>
-            Gets the list of files whose verification could not be completed because
-            the syntax of a rule or instruction associated with that file was invalid.
-            </summary>
-            <remarks>
-            Examples include malformed regex patterns or other malformed per-file
-            verification syntax that prevents a safe hash evaluation.
-            These files are not considered matched or mismatched; they are unverifiable.
-            </remarks>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success">
-            <summary>
-            Gets or sets the overall success state determined by the calling verification mode.
-            </summary>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.ManifestAuthenticated">
-            <summary>
-            Gets or sets whether the manifest signature authentication step succeeded.
-            </summary>
-            <remarks>
-            For unsigned manifest verification this will remain <c>false</c>.
-            Signed-manifest verification paths set this to <c>true</c> after
-            successful CMS signature validation.
-            </remarks>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.IsStrictlyValid">
-            <summary>
-            Indicates whether the result satisfies strict verification semantics.
-            </summary>
-            <remarks>
-            Strict mode requires:
-            - no missing files
-            - no failed files
-            - no unreadable files
-            - no invalid syntax files
-            </remarks>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.IsPartiallyValid">
-            <summary>
-            Indicates whether the result satisfies partial verification semantics.
-            </summary>
-            <remarks>
-            Partial mode allows missing files but still requires:
-            - no failed files
-            - no unreadable files
-            - no invalid syntax files
-            </remarks>
-        </member>
-        <member name="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.ExpectedHashByPath">
-            <summary>
-            Maps manifest-relative file paths to their expected SHA-256 value.
-            </summary>
-            <remarks>
-            This is used internally so legacy APIs can rebuild the original
-            failure dictionary structure grouped by expected hash.
-            </remarks>
-        </member>
         <member name="T:CtxSignlib.Manifest.ManifestPartialVerifier">
             <summary>
             Verifies manifest-listed content in partial mode.
@@ -910,6 +1210,8 @@
             but changes file-presence semantics:
             missing files are reported and are non-fatal by themselves,
             while present files must still validate exactly.
+            Files that cannot be safely verified due to invalid per-file syntax
+            are also treated as verification failures.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Manifest.ManifestPartialVerifier.VerifyManifestPartial(System.String,System.String)">
@@ -927,6 +1229,8 @@
             </returns>
             <remarks>
             Missing files are reported but do not fail partial verification by themselves.
+            Present unreadable files, present hash-mismatched files, and files that cannot be
+            safely verified due to invalid syntax all fail partial verification.
             Malformed manifests and trust-boundary violations still throw, matching the strict parser expectations.
             </remarks>
         </member>
@@ -940,13 +1244,15 @@
             Must resolve to a location inside <paramref name="rootDir"/>.
             </param>
             <returns>
-            A detailed partial verification result containing passed, missing, failed, and unreadable file lists.
+            A detailed partial verification result containing passed, missing, failed, unreadable,
+            and invalid-syntax file lists.
             </returns>
             <remarks>
             Missing files are non-fatal in this mode.
-            Present unreadable files and present hash-mismatched files are fatal.
+            Present unreadable files, present hash-mismatched files, and files that cannot be
+            safely verified due to invalid syntax are fatal.
             Malformed manifests and invalid trust-boundary inputs still throw.
-            The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+            The returned <see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.Success"/> value is computed
             using partial verification semantics.
             </remarks>
         </member>
@@ -1017,6 +1323,8 @@
             <remarks>
             Missing files are non-fatal in partial mode.
             Signature failure is always fatal.
+            Files that cannot be safely verified due to invalid per-file syntax are also fatal
+            to partial verification validity after authentication succeeds.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Manifest.SignedManifestPartialVerifier.VerifySignedManifestPartialDetailed(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@)">
@@ -1046,17 +1354,12 @@
             <remarks>
             If signature verification fails, the method returns a failed result immediately and does not evaluate manifest file entries.
             Missing files are reported but are non-fatal in partial mode.
-            The returned <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.Success"/> value is computed
+            Present unreadable files, present hash-mismatched files, and files that cannot be
+            safely verified due to invalid syntax are fatal after authentication succeeds.
+            The returned <see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.Success"/> value is computed
             using partial verification semantics after signed-manifest authentication succeeds.
+            Input and trust-boundary validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="rootDir"/>, <paramref name="manifestPath"/>, or <paramref name="pinnedPublicKeySha256"/> is null or whitespace,
-            or if the normalized pin is empty.
-            </exception>
-            <exception cref="T:System.IO.DirectoryNotFoundException">Thrown if <paramref name="rootDir"/> does not exist.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if <paramref name="manifestPath"/> or the resolved <paramref name="sigPath"/> is outside <paramref name="rootDir"/>.
-            </exception>
         </member>
         <member name="T:CtxSignlib.Manifest.SignedManifestVerifier">
             <summary>
@@ -1088,6 +1391,9 @@
             </list>
             <para>
             This API returns <c>false</c> if either step fails (signature invalid/missing/pin mismatch, or any manifest file verification failure).
+            </para>
+            <para>
+            Input and trust-boundary validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </para>
             </remarks>
         </member>
@@ -1134,18 +1440,7 @@
             and details are returned in <paramref name="failedFiles"/>.
             </description></item>
             </list>
-            <para>
-            Exceptions are reserved for invalid inputs, violated trust-boundary constraints (manifest/signature outside root), or malformed manifest structure.
-            </para>
             </remarks>
-            <exception cref="T:System.ArgumentException">
-            Thrown if <paramref name="rootDir"/>, <paramref name="manifestPath"/>, or <paramref name="pinnedPublicKeySha256"/> is null/whitespace
-            (or the pin normalizes to empty).
-            </exception>
-            <exception cref="T:System.IO.DirectoryNotFoundException">Thrown if <paramref name="rootDir"/> does not exist.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if <paramref name="manifestPath"/> or the resolved signature path is outside <paramref name="rootDir"/>.
-            </exception>
         </member>
         <member name="M:CtxSignlib.Manifest.SignedManifestVerifier.VerifySignedManifest(System.String,System.String,System.String,System.String,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}}@)">
             <summary>
@@ -1209,10 +1504,10 @@
             <para>
             This method does not timestamp the signature and does not add signing-time attributes.
             </para>
+            <para>
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </para>
             </remarks>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="signingCert"/> is null.</exception>
-            <exception cref="T:System.InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
-            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS signature generation fails.</exception>
         </member>
         <member name="M:CtxSignlib.Signing.CMSWriter.SignDetachment(System.String,System.String,System.Security.Cryptography.X509Certificates.X509Certificate2)">
             <summary>
@@ -1227,14 +1522,8 @@
             The content file is fully read into memory before signing.
             The signature file is written using <see cref="M:CtxSignlib.Functions.WriteAllBytesAtomic(System.String,System.Byte[])"/>
             to prevent partially-written outputs.
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
-            <exception cref="T:System.ArgumentException">Thrown if <paramref name="contentPath"/> or <paramref name="sigPath"/> is null/whitespace.</exception>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="signingCert"/> is null.</exception>
-            <exception cref="T:System.IO.FileNotFoundException">Thrown if <paramref name="contentPath"/> does not exist.</exception>
-            <exception cref="T:System.InvalidOperationException">Thrown if the provided certificate does not have an accessible private key.</exception>
-            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS signature generation fails.</exception>
-            <exception cref="T:System.IO.IOException">Thrown if writing the signature file fails.</exception>
-            <exception cref="T:System.UnauthorizedAccessException">Thrown if access to the content or signature path is denied.</exception>
         </member>
         <member name="T:CtxSignlib.Verify.VerifyResult">
             <summary>
@@ -1395,9 +1684,8 @@
             <remarks>
             This method validates only the cryptographic integrity of the signature.
             It does not perform certificate chain validation or identity pinning.
+            Failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="content"/> or <paramref name="sig"/> is null.</exception>
-            <exception cref="T:System.Security.Cryptography.CryptographicException">Thrown if CMS decoding or signature verification fails.</exception>
         </member>
         <member name="T:CtxSignlib.Verify.ManifestEntryHashResolver">
             <summary>
@@ -1461,6 +1749,7 @@
             Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
             File hashing is delegated to <see cref="T:CtxSignlib.Verify.ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
             used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifestByPublicKey(System.String,System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
@@ -1492,6 +1781,7 @@
             Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
             File hashing is delegated to <see cref="T:CtxSignlib.Verify.ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
             used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.ManifestFileVerification.VerifyFileAgainstSignedManifest(System.String,System.String,System.String,System.String,CtxSignlib.Verify.VerifyResult@,System.String@,System.String@,System.String@)">
@@ -1529,7 +1819,7 @@
             </para>
             </remarks>
         </member>
-        <member name="M:CtxSignlib.Verify.PackageId.Generate(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+        <member name="M:CtxSignlib.Verify.PackageId.Generate(CtxSignlib.Diagnostics.ManifestPartialVerificationResult)">
             <summary>
             Generates a deterministic package ID from the full expected package contents
             represented by a manifest verification result.
@@ -1541,7 +1831,9 @@
             Uppercase hexadecimal SHA-256 of the canonical package entry list.
             Returns the SHA-256 of an empty UTF-8 payload if no included entries are present.
             </returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
+            <remarks>
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.PackageId.Generate(System.String,System.String)">
             <summary>
@@ -1550,6 +1842,9 @@
             <param name="relativeFilePath">Relative file path.</param>
             <param name="expectedSha256">Expected SHA-256 (hex) for the file.</param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical single-entry payload.</returns>
+            <remarks>
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.PackageId.Generate(System.Collections.Generic.IEnumerable{System.ValueTuple{System.String,System.String}})">
             <summary>
@@ -1559,7 +1854,9 @@
             Sequence of tuples in the form (path, expectedSha256).
             </param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical entry payload.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="entries"/> is null.</exception>
+            <remarks>
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="T:CtxSignlib.Verify.RepairPackageId">
             <summary>
@@ -1586,7 +1883,7 @@
             </para>
             </remarks>
         </member>
-        <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+        <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(CtxSignlib.Diagnostics.ManifestPartialVerificationResult)">
             <summary>
             Generates a deterministic repair package ID from the repair-relevant portions of a manifest verification result.
             </summary>
@@ -1600,51 +1897,47 @@
             <remarks>
             This method includes:
             <list type="bullet">
-            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.MissingFiles"/></description></item>
-            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.FailedFiles"/></description></item>
-            <item><description><see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.UnreadableFiles"/></description></item>
+            <item><description><see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.MissingFiles"/></description></item>
+            <item><description><see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.FailedFiles"/></description></item>
+            <item><description><see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.UnreadableFiles"/></description></item>
             </list>
             <para>
-            <see cref="P:CtxSignlib.Manifest.ManifestPartialVerificationResult.PassedFiles"/> are intentionally excluded.
+            <see cref="P:CtxSignlib.Diagnostics.ManifestPartialVerificationResult.PassedFiles"/> are intentionally excluded.
+            </para>
+            <para>
+            Input and metadata validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
             </para>
             </remarks>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if any repair-relevant path does not have an expected SHA-256 entry in the result metadata.
-            </exception>
         </member>
-        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateMissing(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateMissing(CtxSignlib.Diagnostics.ManifestPartialVerificationResult)">
             <summary>
             Generates a deterministic repair package ID from only the missing-file portion of a manifest verification result.
             </summary>
             <param name="result">A manifest verification result containing expected-hash metadata.</param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical missing-file entry list.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if any missing path does not have an expected SHA-256 entry in the result metadata.
-            </exception>
+            <remarks>
+            Input and metadata validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
-        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateFailed(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateFailed(CtxSignlib.Diagnostics.ManifestPartialVerificationResult)">
             <summary>
             Generates a deterministic repair package ID from only the failed-file portion of a manifest verification result.
             </summary>
             <param name="result">A manifest verification result containing expected-hash metadata.</param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical failed-file entry list.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if any failed path does not have an expected SHA-256 entry in the result metadata.
-            </exception>
+            <remarks>
+            Input and metadata validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
-        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateUnreadable(CtxSignlib.Manifest.ManifestPartialVerificationResult)">
+        <member name="M:CtxSignlib.Verify.RepairPackageId.GenerateUnreadable(CtxSignlib.Diagnostics.ManifestPartialVerificationResult)">
             <summary>
             Generates a deterministic repair package ID from only the unreadable-file portion of a manifest verification result.
             </summary>
             <param name="result">A manifest verification result containing expected-hash metadata.</param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical unreadable-file entry list.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="result"/> is null.</exception>
-            <exception cref="T:System.InvalidOperationException">
-            Thrown if any unreadable path does not have an expected SHA-256 entry in the result metadata.
-            </exception>
+            <remarks>
+            Input and metadata validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(System.String,System.String)">
             <summary>
@@ -1653,6 +1946,9 @@
             <param name="relativeFilePath">Relative file path.</param>
             <param name="expectedSha256">Expected SHA-256 (hex) for the file.</param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical single-entry payload.</returns>
+            <remarks>
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="M:CtxSignlib.Verify.RepairPackageId.Generate(System.Collections.Generic.IEnumerable{System.ValueTuple{System.String,System.String}})">
             <summary>
@@ -1662,7 +1958,9 @@
             Sequence of tuples in the form (path, expectedSha256).
             </param>
             <returns>Uppercase hexadecimal SHA-256 of the canonical entry payload.</returns>
-            <exception cref="T:System.ArgumentNullException">Thrown if <paramref name="entries"/> is null.</exception>
+            <remarks>
+            Input validation failures are reported as <see cref="T:CtxSignlib.Diagnostics.CtxException"/>.
+            </remarks>
         </member>
         <member name="T:CtxSignlib.Verify.SingleFileVerification">
             <summary>

@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Verify
@@ -24,8 +25,21 @@ namespace CtxSignlib.Verify
             actualSha256 = string.Empty;
             failure = string.Empty;
 
-            if (Null(rootDir)) throw new ArgumentException("rootDir is required.", nameof(rootDir));
-            if (Null(absFile)) throw new ArgumentException("absFile is required.", nameof(absFile));
+            if (Null(rootDir))
+            {
+                throw new CtxException(
+                    message: "rootDir is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(absFile))
+            {
+                throw new CtxException(
+                    message: "absFile is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             rootDir = Path.GetFullPath(rootDir);
             absFile = Path.GetFullPath(absFile);
@@ -160,14 +174,12 @@ namespace CtxSignlib.Verify
             }
             catch (DecoderFallbackException)
             {
-                // Regex-filtered hashing requires valid UTF-8 text.
                 failure = "InvalidSyntax";
                 actualSha256 = string.Empty;
                 return false;
             }
             catch (ArgumentException)
             {
-                // Malformed regex or other malformed syntax associated with hashing rules.
                 failure = "InvalidSyntax";
                 actualSha256 = string.Empty;
                 return false;

@@ -1,5 +1,6 @@
 ﻿// CtxSignlib.Verify/ManifestFileVerification.cs
 using System.Text.Json;
+using CtxSignlib.Diagnostics;
 using static CtxSignlib.Functions;
 
 namespace CtxSignlib.Verify
@@ -59,6 +60,7 @@ namespace CtxSignlib.Verify
         /// Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
         /// File hashing is delegated to <see cref="ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
         /// used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
+        /// Input validation failures are reported as <see cref="CtxException"/>.
         /// </remarks>
         public static bool VerifyFileAgainstSignedManifest(
             string rootDir,
@@ -76,10 +78,37 @@ namespace CtxSignlib.Verify
             failure = string.Empty;
             signatureResult = VerifyResult.BadSignature;
 
-            if (Null(rootDir)) throw new ArgumentException("rootDir is required.", nameof(rootDir));
-            if (Null(filePath)) throw new ArgumentException("filePath is required.", nameof(filePath));
-            if (Null(manifestPath)) throw new ArgumentException("manifestPath is required.", nameof(manifestPath));
-            if (Null(pinnedThumbprint)) throw new ArgumentException("pinnedThumbprint is required.", nameof(pinnedThumbprint));
+            if (Null(rootDir))
+            {
+                throw new CtxException(
+                    message: "rootDir is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(filePath))
+            {
+                throw new CtxException(
+                    message: "filePath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(manifestPath))
+            {
+                throw new CtxException(
+                    message: "manifestPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(pinnedThumbprint))
+            {
+                throw new CtxException(
+                    message: "pinnedThumbprint is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             rootDir = Path.GetFullPath(rootDir);
 
@@ -170,6 +199,7 @@ namespace CtxSignlib.Verify
         /// Signature verification is crypto-only and pins the signer extracted from the CMS signature itself (never OS stores).
         /// File hashing is delegated to <see cref="ManifestEntryHashResolver"/>, which applies the same manifest exclude semantics
         /// used during manifest creation, including regex-filtered hashing for matching file-level exclude rules.
+        /// Input validation failures are reported as <see cref="CtxException"/>.
         /// </remarks>
         public static bool VerifyFileAgainstSignedManifestByPublicKey(
             string rootDir,
@@ -187,10 +217,37 @@ namespace CtxSignlib.Verify
             failure = string.Empty;
             signatureResult = VerifyResult.BadSignature;
 
-            if (Null(rootDir)) throw new ArgumentException("rootDir is required.", nameof(rootDir));
-            if (Null(filePath)) throw new ArgumentException("filePath is required.", nameof(filePath));
-            if (Null(manifestPath)) throw new ArgumentException("manifestPath is required.", nameof(manifestPath));
-            if (Null(pinnedPublicKeySha256)) throw new ArgumentException("pinnedPublicKeySha256 is required.", nameof(pinnedPublicKeySha256));
+            if (Null(rootDir))
+            {
+                throw new CtxException(
+                    message: "rootDir is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(filePath))
+            {
+                throw new CtxException(
+                    message: "filePath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(manifestPath))
+            {
+                throw new CtxException(
+                    message: "manifestPath is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (Null(pinnedPublicKeySha256))
+            {
+                throw new CtxException(
+                    message: "pinnedPublicKeySha256 is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
             rootDir = Path.GetFullPath(rootDir);
 

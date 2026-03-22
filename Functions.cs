@@ -1,4 +1,5 @@
 ﻿//CtxSignlib/Functions.cs
+using CtxSignlib.Diagnostics;
 using CtxSignlib.Verify;
 using System;
 using System.Collections.Generic;
@@ -123,7 +124,6 @@ namespace CtxSignlib
                     }
                     else
                     {
-                        // flag
                         values[key] = "true";
                     }
                     continue;
@@ -147,14 +147,12 @@ namespace CtxSignlib
                     }
                     else
                     {
-                        // -abc → -a -b -c
                         foreach (char c in key)
                             values[c.ToString()] = "true";
                     }
                     continue;
                 }
 
-                // positional args: store as _0, _1, etc.
                 values[$"_{values.Count}"] = a;
             }
 
@@ -246,11 +244,9 @@ namespace CtxSignlib
             string root = Path.GetFullPath(rootDir);
             string child = Path.GetFullPath(childPath);
 
-            // Allow exact match (child is the root itself)
             if (string.Equals(root, child, IsWindows ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 return true;
 
-            // Ensure trailing separator on root to avoid "/a/b2" matching "/a/b"
             root = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                 + Path.DirectorySeparatorChar;
 
@@ -331,36 +327,62 @@ namespace CtxSignlib
         /// <returns>Decoded DER bytes for the public key (SPKI).</returns>
         public static byte[] ParsePublicKeyBytes(string input)
         {
-            if (Null(input)) throw new ArgumentException("Public key input is required.", nameof(input));
-
-            var s = input.Trim();
-
-            // PEM -> base64 body
-            if (s.Contains("BEGIN PUBLIC KEY", StringComparison.OrdinalIgnoreCase))
+            if (Null(input))
             {
-                var lines = s.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                var b64 = new StringBuilder();
-                foreach (var line in lines)
+                throw new CtxException(
+                    message: "Public key input is required.",
+                    target: ErrorTarget.Pin,
+                    detail: ErrorDetail.PinMissing);
+            }
+
+            try
+            {
+                var s = input.Trim();
+
+                if (s.Contains("BEGIN PUBLIC KEY", StringComparison.OrdinalIgnoreCase))
                 {
-                    var t = line.Trim();
-                    if (t.StartsWith("-----", StringComparison.Ordinal)) continue;
-                    b64.Append(t);
+                    var lines = s.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    var b64 = new StringBuilder();
+                    foreach (var line in lines)
+                    {
+                        var t = line.Trim();
+                        if (t.StartsWith("-----", StringComparison.Ordinal)) continue;
+                        b64.Append(t);
+                    }
+                    s = b64.ToString();
                 }
-                s = b64.ToString();
-            }
 
-            // If it looks like hex, treat as hex (after normalization)
-            var hex = NormalizeHex(s);
-            if (hex.Length >= 16 &&
-                (hex.Length % 2) == 0 &&
-                hex.Length == s.Where(Uri.IsHexDigit).Count())
+                var hex = NormalizeHex(s);
+                if (hex.Length >= 16 &&
+                    (hex.Length % 2) == 0 &&
+                    hex.Length == s.Where(Uri.IsHexDigit).Count())
+                {
+                    return DecodeHex(hex);
+                }
+
+                s = string.Concat(s.Where(c => !char.IsWhiteSpace(c)));
+                return Convert.FromBase64String(s);
+            }
+            catch (CtxException)
             {
-                return DecodeHex(hex);
+                throw;
             }
-
-            // Else treat as base64 (strip whitespace just in case)
-            s = string.Concat(s.Where(c => !char.IsWhiteSpace(c)));
-            return Convert.FromBase64String(s);
+            catch (FormatException ex)
+            {
+                throw new CtxException(
+                    message: "Public key input is not valid PEM, base64, or hex SPKI data.",
+                    target: ErrorTarget.Pin,
+                    detail: ErrorDetail.InvalidPin,
+                    innerException: ex);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new CtxException(
+                    message: "Public key input is not valid PEM, base64, or hex SPKI data.",
+                    target: ErrorTarget.Pin,
+                    detail: ErrorDetail.InvalidPin,
+                    innerException: ex);
+            }
         }
 
         /// <summary>
@@ -381,21 +403,18 @@ namespace CtxSignlib
         {
             if (cert == null) return Array.Empty<byte>();
 
-            // Try RSA
             using (var rsa = cert.GetRSAPublicKey())
             {
                 if (rsa != null)
                     return rsa.ExportSubjectPublicKeyInfo();
             }
 
-            // Try ECDSA
             using (var ecdsa = cert.GetECDsaPublicKey())
             {
                 if (ecdsa != null)
                     return ecdsa.ExportSubjectPublicKeyInfo();
             }
 
-            // Try DSA
             using (var dsa = cert.GetDSAPublicKey())
             {
                 if (dsa != null)
@@ -412,14 +431,64 @@ namespace CtxSignlib
         /// <returns>Uppercase hexadecimal SHA-256 digest.</returns>
         /// <remarks>
         /// This method reads the entire file stream to compute the digest.
+        /// Failures are reported as <see cref="CtxException"/> using file-system or cryptography error categories.
         /// </remarks>
-        /// <exception cref="IOException">Thrown if the file cannot be read.</exception>
-        /// <exception cref="UnauthorizedAccessException">Thrown if access is denied.</exception>
         public static string FileSha256(string path)
         {
-            using var sha = SHA256.Create();
-            using var fs = File.OpenRead(path);
-            return Convert.ToHexString(sha.ComputeHash(fs));
+            if (Null(path))
+            {
+                throw new CtxException(
+                    message: "path is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (!File.Exists(path))
+            {
+                throw new CtxException(
+                    message: "File not found.",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileNotFound);
+            }
+
+            try
+            {
+                using var sha = SHA256.Create();
+                using var fs = File.OpenRead(path);
+                return Convert.ToHexString(sha.ComputeHash(fs));
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new CtxException(
+                    message: $"Access denied while hashing file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.AccessDenied,
+                    innerException: ex);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                throw new CtxException(
+                    message: $"Directory not found while hashing file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound,
+                    innerException: ex);
+            }
+            catch (IOException ex)
+            {
+                throw new CtxException(
+                    message: $"Failed to read file for hashing: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileUnreadable,
+                    innerException: ex);
+            }
+            catch (CryptographicException ex)
+            {
+                throw new CtxException(
+                    message: "Failed to compute SHA-256 hash.",
+                    target: ErrorTarget.Cryptography,
+                    detail: ErrorDetail.CryptographicFailure,
+                    innerException: ex);
+            }
         }
 
         /// <summary>
@@ -464,10 +533,54 @@ namespace CtxSignlib
         /// <remarks>
         /// On Windows, <see cref="FileShare.Read"/> prevents other processes from opening the file for write or delete
         /// while this stream is open (subject to privileges/OS policy).
+        /// Failures are reported as <see cref="CtxException"/>.
         /// </remarks>
         public static FileStream OpenReadLocked(string path)
         {
-            return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (Null(path))
+            {
+                throw new CtxException(
+                    message: "path is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (!File.Exists(path))
+            {
+                throw new CtxException(
+                    message: "File not found.",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileNotFound);
+            }
+
+            try
+            {
+                return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new CtxException(
+                    message: $"Access denied while opening file for locked read: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.AccessDenied,
+                    innerException: ex);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                throw new CtxException(
+                    message: $"Directory not found while opening file for locked read: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound,
+                    innerException: ex);
+            }
+            catch (IOException ex)
+            {
+                throw new CtxException(
+                    message: $"Failed to open file for locked read: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileUnreadable,
+                    innerException: ex);
+            }
         }
 
         /// <summary>
@@ -510,7 +623,7 @@ namespace CtxSignlib
             if (spki.Length == 0) return string.Empty;
 
             using var sha = SHA256.Create();
-            return Convert.ToHexString(sha.ComputeHash(spki)); // uppercase hex
+            return Convert.ToHexString(sha.ComputeHash(spki));
         }
 
         /// <summary>
@@ -538,7 +651,7 @@ namespace CtxSignlib
         /// <returns><c>true</c> if the decoded byte sequences are identical; otherwise <c>false</c>.</returns>
         /// <remarks>
         /// Input normalization removes non-hex characters and uppercases letters before decoding.
-        /// This method will throw if either input decodes to an invalid hex length (odd number of hex digits) or contains invalid characters after normalization.
+        /// Invalid hex input is reported by the underlying decode helpers as <see cref="CtxException"/>.
         /// </remarks>
         public static bool HexBytesEquals(string hexA, string hexB)
         {
@@ -559,7 +672,7 @@ namespace CtxSignlib
         /// </returns>
         /// <remarks>
         /// <para>
-        /// This method performs strict validation and throws if the character is not a valid
+        /// This method performs strict validation and throws <see cref="CtxException"/> if the character is not a valid
         /// uppercase hexadecimal digit.
         /// </para>
         /// <para>
@@ -567,14 +680,15 @@ namespace CtxSignlib
         /// or <see cref="DecodeHex(string)"/>, which handle normalization and validation.
         /// </para>
         /// </remarks>
-        /// <exception cref="FormatException">
-        /// Thrown if <paramref name="c"/> is not a valid hexadecimal character.
-        /// </exception>
         public static int GetHexValue(char c)
         {
             if (c >= '0' && c <= '9') return c - '0';
             if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-            throw new FormatException($"Invalid hex character '{c}'.");
+
+            throw new CtxException(
+                message: $"Invalid hex character '{c}'.",
+                target: ErrorTarget.Arguments,
+                detail: ErrorDetail.InvalidFormat);
         }
 
         /// <summary>
@@ -606,11 +720,9 @@ namespace CtxSignlib
         /// </summary>
         /// <param name="hex">The hexadecimal string to decode.</param>
         /// <returns>The decoded bytes.</returns>
-        /// <exception cref="FormatException">
-        /// Thrown if the normalized hex string has an odd length or contains invalid characters.
-        /// </exception>
         /// <remarks>
         /// Normalization strips all non-hex characters and uppercases letters. An empty input results in an empty byte array.
+        /// Invalid hex input is reported as <see cref="CtxException"/>.
         /// </remarks>
         public static byte[] DecodeHex(string hex)
         {
@@ -620,7 +732,12 @@ namespace CtxSignlib
                 return Array.Empty<byte>();
 
             if ((hex.Length & 1) != 0)
-                throw new FormatException("Hex string length must be even.");
+            {
+                throw new CtxException(
+                    message: "Hex string length must be even.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.InvalidFormat);
+            }
 
             byte[] result = new byte[hex.Length / 2];
 
@@ -705,7 +822,6 @@ namespace CtxSignlib
         {
             using var sha = SHA256.Create();
             byte[] h = sha.ComputeHash(Encoding.UTF8.GetBytes(s));
-            // 12 bytes => 24 hex chars, plenty unique and readable.
             return Convert.ToHexString(h, 0, 12);
         }
 
@@ -984,8 +1100,55 @@ namespace CtxSignlib
         /// <returns>The file contents.</returns>
         /// <remarks>
         /// This is a thin wrapper over <see cref="File.ReadAllBytes(string)"/> to keep call sites uniform.
+        /// Failures are reported as <see cref="CtxException"/>.
         /// </remarks>
-        public static byte[] ReadAllBytesSafe(string path) => File.ReadAllBytes(path);
+        public static byte[] ReadAllBytesSafe(string path)
+        {
+            if (Null(path))
+            {
+                throw new CtxException(
+                    message: "path is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
+
+            if (!File.Exists(path))
+            {
+                throw new CtxException(
+                    message: "File not found.",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileNotFound);
+            }
+
+            try
+            {
+                return File.ReadAllBytes(path);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new CtxException(
+                    message: $"Access denied while reading file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.AccessDenied,
+                    innerException: ex);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                throw new CtxException(
+                    message: $"Directory not found while reading file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound,
+                    innerException: ex);
+            }
+            catch (IOException ex)
+            {
+                throw new CtxException(
+                    message: $"Failed to read file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.FileUnreadable,
+                    innerException: ex);
+            }
+        }
 
         /// <summary>
         /// Writes bytes to a file using an atomic replace strategy to avoid partially-written outputs.
@@ -996,22 +1159,80 @@ namespace CtxSignlib
         /// Writes to <c>{path}.tmp</c> first, then replaces/moves into place.
         /// If the destination exists, <see cref="File.Replace(string, string, string)"/> is used; otherwise <see cref="File.Move(string, string)"/>.
         /// The destination directory is created if needed.
+        /// Failures are reported as <see cref="CtxException"/>.
         /// </remarks>
-        /// <exception cref="IOException">Thrown for I/O failures (including replace/move errors).</exception>
-        /// <exception cref="UnauthorizedAccessException">Thrown if access is denied.</exception>
         public static void WriteAllBytesAtomic(string path, byte[] data)
         {
-            string dir = Path.GetDirectoryName(path) ?? "";
-            if (dir.Length != 0 && !Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
+            if (Null(path))
+            {
+                throw new CtxException(
+                    message: "path is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
-            string tmp = path + ".tmp";
-            File.WriteAllBytes(tmp, data);
+            if (data == null)
+            {
+                throw new CtxException(
+                    message: "data is required.",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.MissingInput);
+            }
 
-            if (File.Exists(path))
-                File.Replace(tmp, path, null);
-            else
-                File.Move(tmp, path);
+            try
+            {
+                string dir = Path.GetDirectoryName(path) ?? "";
+                if (dir.Length != 0 && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                string tmp = path + ".tmp";
+                File.WriteAllBytes(tmp, data);
+
+                if (File.Exists(path))
+                    File.Replace(tmp, path, null);
+                else
+                    File.Move(tmp, path);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                throw new CtxException(
+                    message: $"Access denied while writing file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.AccessDenied,
+                    innerException: ex);
+            }
+            catch (DirectoryNotFoundException ex)
+            {
+                throw new CtxException(
+                    message: $"Directory not found while writing file: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.DirectoryNotFound,
+                    innerException: ex);
+            }
+            catch (IOException ex)
+            {
+                throw new CtxException(
+                    message: $"Failed to write file atomically: {path}",
+                    target: ErrorTarget.FileSystem,
+                    detail: ErrorDetail.OperationFailed,
+                    innerException: ex);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new CtxException(
+                    message: $"Invalid file path: {path}",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.InvalidArguments,
+                    innerException: ex);
+            }
+            catch (NotSupportedException ex)
+            {
+                throw new CtxException(
+                    message: $"Invalid file path: {path}",
+                    target: ErrorTarget.Arguments,
+                    detail: ErrorDetail.InvalidArguments,
+                    innerException: ex);
+            }
         }
 
         #endregion
